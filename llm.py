@@ -1,7 +1,7 @@
 # https://llama.meta.com/docs/llama-everywhere/running-meta-llama-on-mac/
 
 import requests
-import csv, sqlite3
+import sqlite3
 
 url = "http://localhost:11434/api/chat"
 
@@ -21,7 +21,6 @@ def llama3(prompt):
     }
     response = requests.post(url, headers=headers, json=data)
     return(response.json()['message']['content'])
-
 
 def attempt_llama3():
     num1 = int(llama3("Pick a number from 1 to 10. Say only the number and nothing else."))
@@ -56,4 +55,30 @@ def csv_to_sql_hosp_admissions():
         print(row)
     con.close()
 
-csv_to_sql_hosp_admissions()
+def csv_to_sql_hosp_omr():
+    con = sqlite3.connect("omr.db")
+    cur = con.cursor()
+    cur.execute("DROP TABLE IF EXISTS omr;")
+    cur.execute("CREATE TABLE omr (subject_id, chartdate, seq_num, result_name, result_value);")
+    with open('mimic-iv-2.2/hosp/omr.csv', 'r') as file:
+        total_lines = len(file.readlines())
+    with open('mimic-iv-2.2/hosp/omr.csv', 'r') as file:
+        current_line_num = 1
+        while current_line_num <= total_lines:
+            current_line = file.readline().split(',')
+            if current_line_num > 1:
+                print(current_line_num)
+                subject_id, chartdate, seq_num, result_name, result_value = current_line
+                result_value = result_value.split('\n')[0]
+                cur.execute("INSERT INTO omr (subject_id, chartdate, seq_num, result_name, result_value) VALUES (?, ?, ?, ?, ?);",
+                            (subject_id, chartdate, seq_num, result_name, result_value))
+                con.commit()
+            current_line_num += 1
+    cur = con.cursor()
+    cur.execute("SELECT * FROM omr;")
+    for row in cur.fetchall():
+        print(row)
+    con.close()
+
+# csv_to_sql_hosp_admissions()
+# csv_to_sql_hosp_omr()
