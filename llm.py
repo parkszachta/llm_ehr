@@ -80,5 +80,39 @@ def csv_to_sql_hosp_omr():
         print(row)
     con.close()
 
+<<<<<<< HEAD
 # csv_to_sql_hosp_admissions()
 # csv_to_sql_hosp_omr()
+=======
+def sql_hosp_admissions_to_predict_dischtime():
+    con = sqlite3.connect("admissions.db")
+    cur = con.cursor()
+    cur.execute("SELECT * FROM admissions;")
+    for row in cur.fetchall():
+        admittime = row[2]
+        admission_type = row[5]
+        admission_location = row[7]
+        insurance = row[9]
+        language = row[10]
+        marital_status = row[11]
+        race = row[12]
+        edregtime = row[13]
+        predicted_dischtime = llama3(
+            f'''Consider a patient whose admission to the hospital is at {admittime}, 
+            admission type is {admission_type}, location of admission is 
+            {admission_location}, insurance status is {insurance}, 
+            language is {language}, marital status is {marital_status}, 
+            race is {race}, and emergency room admission is at {edregtime}. 
+            What is the patient's discharge time from the hospital? The format of your answer 
+            should be in YYYY-MM-DD HH:MM:SS. Do not provide any information except for that 
+            answer.'''
+        )
+        dischtime = row[3]
+        print(f"Predicted dischtime: {predicted_dischtime}")
+        print(f"Dischtime: {dischtime}")
+    con.close()
+
+# csv_to_sql_hosp_admissions()
+# csv_to_sql_hosp_omr()
+sql_hosp_admissions_to_predict_dischtime()
+>>>>>>> 0db5da2 (Added sql_hosp_admissions_to_predict_dischtime() function)
