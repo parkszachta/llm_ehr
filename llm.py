@@ -80,10 +80,6 @@ def csv_to_sql_hosp_omr():
         print(row)
     con.close()
 
-<<<<<<< HEAD
-# csv_to_sql_hosp_admissions()
-# csv_to_sql_hosp_omr()
-=======
 def sql_hosp_admissions_to_predict_dischtime():
     con = sqlite3.connect("admissions.db")
     cur = con.cursor()
@@ -115,4 +111,3 @@ def sql_hosp_admissions_to_predict_dischtime():
 # csv_to_sql_hosp_admissions()
 # csv_to_sql_hosp_omr()
 sql_hosp_admissions_to_predict_dischtime()
->>>>>>> 0db5da2 (Added sql_hosp_admissions_to_predict_dischtime() function)
