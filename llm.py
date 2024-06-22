@@ -3,6 +3,9 @@
 import requests
 import sqlite3
 from datetime import datetime
+from sklearn.model_selection import train_test_split
+from sklearn import svm
+from sklearn import metrics
 
 url = "http://localhost:11434/api/chat"
 
@@ -361,6 +364,296 @@ def csv_to_sql_hosp_diabetes():
     con.close()
     con2.close()
 
+# omr_summary_filtered has rows of (subject_id, avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height)
+# diabetes_filtered has rows of (subject_id, diagnosed_with_diabetes)
+# these do not have any patients with at least one 'N/A'
+def sql_to_sql_hosp_diabetes_filtered():
+    con = sqlite3.connect("omr_summary.db")
+    cur = con.cursor()
+    cur.execute("SELECT * FROM omr_summary WHERE (avg_systolic != 'N/A' AND avg_diastolic != 'N/A' AND avg_weight != 'N/A' AND avg_bmi != 'N/A' AND avg_height != 'N/A');")
+    con2 = sqlite3.connect("diabetes.db")
+    cur2 = con2.cursor()
+    con3 = sqlite3.connect("omr_summary_filtered.db")
+    cur3 = con3.cursor()
+    cur3.execute("DROP TABLE IF EXISTS omr_summary_filtered;")
+    cur3.execute("CREATE TABLE omr_summary_filtered (subject_id, avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height);")
+    con4 = sqlite3.connect("diabetes_filtered.db")
+    cur4 = con4.cursor()
+    cur4.execute("DROP TABLE IF EXISTS diabetes_filtered;")
+    cur4.execute("CREATE TABLE diabetes_filtered (subject_id, diagnosed_with_diabetes);")
+    current_line_num = 1
+    for row in cur.fetchall():
+        print(current_line_num)
+        current_subject_id = row[0]
+        avg_systolic = row[1]
+        avg_diastolic = row[2]
+        avg_weight = row[3]
+        avg_bmi = row[4]
+        avg_height = row[5]
+        cur2.execute("SELECT * FROM diabetes WHERE subject_id = ?", 
+                    (current_subject_id,))
+        fetched = cur2.fetchone()
+        if fetched is not None:
+            diagnosed_with_diabetes = fetched[0]
+            cur3.execute("INSERT INTO omr_summary_filtered (subject_id, avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height) VALUES (?, ?, ?, ?, ?, ?);", 
+                        (current_subject_id, avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height))
+            cur4.execute("INSERT INTO diabetes_filtered (subject_id, diagnosed_with_diabetes) VALUES (?, ?);", 
+                        (current_subject_id, diagnosed_with_diabetes))
+        current_line_num += 1
+    cur3.execute("SELECT * FROM omr_summary_filtered;")
+    for row in cur3.fetchall():
+        print(row)
+    cur4.execute("SELECT * FROM diabetes_filtered;")
+    for row in cur4.fetchall():
+        print(row)
+    con.commit()
+    con2.commit()
+    con3.commit()
+    con4.commit()
+    con.close()
+    con2.close()
+    con3.close()
+    con4.close()
+
+def sql_hosp_diabetes_filtered_to_svm():
+    features = []
+    labels = []
+    con = sqlite3.connect("omr_summary_filtered.db")
+    cur = con.cursor()
+    cur.execute("SELECT * FROM omr_summary_filtered;")
+    con2 = sqlite3.connect("diabetes_filtered.db")
+    cur2 = con2.cursor()
+    cur2.execute("SELECT * FROM diabetes_filtered;")
+    current_line_num = 1
+    for row in cur.fetchall():
+        print(current_line_num)
+        avg_systolic = row[1]
+        avg_diastolic = row[2]
+        avg_weight = row[3]
+        avg_bmi = row[4]
+        avg_height = row[5]
+        diagnosed_with_diabetes = cur2.fetchone()[1]
+        features.append([avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height])
+        labels.append(diagnosed_with_diabetes)
+        current_line_num += 1
+    con.commit()
+    con2.commit()
+    con.close()
+    con2.close()
+    print(f"Features length: {len(features)}")
+    print(f"First few features: {features[0:20]}")
+    print(f"Labels length: {len(labels)}")
+    print(f"First few labels: {labels[0:20]}")
+    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2)
+    clf = svm.SVC(kernel='linear')
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+    print(f"Predicted labels length: {len(y_pred)}")
+    print(f"First few predicted labels: {y_pred[0:20]}")
+    print(f"Accuracy: {metrics.accuracy_score(y_test, y_pred)}")
+    print(f"Precision: {metrics.precision_score(y_test, y_pred)}")
+    print(f"Recall: {metrics.recall_score(y_test, y_pred)}")
+
+def admitted_patients():
+    con = sqlite3.connect("admissions.db")
+    cur = con.cursor()
+    cur.execute("SELECT * FROM admissions;")
+    con2 = sqlite3.connect("admitted_patients.db")
+    cur2 = con2.cursor()
+    cur2.execute("DROP TABLE IF EXISTS admitted_patients;")
+    cur2.execute("CREATE TABLE admitted_patients (subject_id);")
+    current_subject_id = ""
+    for row in cur.fetchall():
+        subject_id = row[0]
+        if subject_id != current_subject_id:
+            if current_subject_id != "":
+                cur2.execute("INSERT INTO admitted_patients (subject_id) VALUES (?);",
+                            (current_subject_id,))
+            current_subject_id = subject_id
+    cur2.execute("INSERT INTO admitted_patients (subject_id) VALUES (?);",
+                (current_subject_id,))
+    con2.commit()
+    con.commit()
+    cur2.execute("SELECT * FROM admitted_patients;")
+    for row in cur2.fetchall():
+        print(row)
+    con2.commit()
+    con.close()
+    con2.close()
+
+def patients_icd10_codes():
+    con = sqlite3.connect("patients_icd10_codes.db")
+    cur = con.cursor()
+    cur.execute("DROP TABLE IF EXISTS patients_icd10_codes;")
+    cur.execute("CREATE TABLE patients_icd10_codes (subject_id, hadm_id, icd10_code);")
+    with open('mimic-iv-2.2/hosp/diagnoses_icd.csv', 'r') as file:
+        total_lines = len(file.readlines())
+    current_subject_id = ""
+    current_icd10_codes = []
+    with open('mimic-iv-2.2/hosp/diagnoses_icd.csv', 'r') as file:
+        current_line_num = 1
+        while current_line_num <= total_lines:
+            current_line = file.readline().split(',')
+            print(current_line)
+            subject_id = current_line[0]
+            current_hadm_id = current_line[1]
+            icd_code = current_line[3]
+            icd_version = current_line[4].split('\n')[0]
+            if subject_id != current_subject_id:
+                if current_subject_id != "":
+                    for current_icd10_code in current_icd10_codes:
+                        cur.execute("INSERT INTO patients_icd10_codes (subject_id, hadm_id, icd10_code) VALUES (?, ?, ?);", 
+                                    (current_subject_id, current_hadm_id, current_icd10_code))
+                current_subject_id = subject_id
+                current_icd10_codes = []
+            if icd_version == "10" and icd_code not in current_icd10_codes:
+                current_icd10_codes.append(icd_code)
+            current_line_num += 1
+    for current_icd10_code in current_icd10_codes:
+        cur.execute("INSERT INTO patients_icd10_codes (subject_id, hadm_id, icd10_code) VALUES (?, ?);", 
+                    (current_subject_id, current_hadm_id, current_icd10_code))
+    con.commit()
+    cur.execute("SELECT * FROM patients_icd10_codes;")
+    for row in cur.fetchall():
+        print(row)
+    con.commit()
+    con.close()
+
+def icd10_to_phecodes():
+    con = sqlite3.connect('icd10_to_phecodes.db')
+    cur = con.cursor()
+    cur.execute("DROP TABLE IF EXISTS icd10_to_phecodes")
+    cur.execute(f"CREATE TABLE icd10_to_phecodes (ICD, phecode);")
+    with open('ICD-CM to phecode, unrolled.txt') as file:
+        amt_of_icd10_codes = len(file.readlines())
+    with open('ICD-CM to phecode, unrolled.txt') as file:
+        current_line_num = 1
+        while current_line_num <= amt_of_icd10_codes:
+            current_line = file.readline().split('\t')
+            print(current_line)
+            if current_line_num > 1:
+                icd_code_split = current_line[0].split('.')
+                ICD = ""
+                for icd_code_piece in icd_code_split:
+                    if icd_code_piece != ".":
+                        ICD += icd_code_piece
+                flag = int(current_line[1])
+                phecode = current_line[2].split('\n')[0]
+                if flag == 10:
+                    cur.execute("INSERT INTO icd10_to_phecodes (ICD, phecode) VALUES (?, ?);", 
+                                (ICD, phecode))
+            current_line_num += 1
+    cur.execute("SELECT * FROM icd10_to_phecodes;")
+    for row in cur.fetchall():
+        print(row)
+    con.commit()
+    con.close()
+
+def icd10_to_phecodes_data_structure():
+    con = sqlite3.connect('icd10_to_phecodes.db')
+    cur = con.cursor()
+    cur.execute("SELECT * FROM icd10_to_phecodes;")
+    icd10_to_phecodes = {}
+    for row in cur.fetchall():
+        ICD = row[0]
+        phecode = row[1]
+        if ICD not in icd10_to_phecodes:
+            icd10_to_phecodes[ICD] = set()
+        icd10_to_phecodes[ICD].add(phecode)
+        print(f"Phecode: {phecode}")
+    return icd10_to_phecodes
+
+def hadm_id_to_dischtimes_data_structure():
+    con = sqlite3.connect('admissions.db')
+    cur = con.cursor()
+    cur.execute("SELECT * FROM admissions;")
+    hadm_id_to_dischtimes = {}
+    for row in cur.fetchall():
+        hadm_id = row[1]
+        dischtime = row[3]
+        hadm_id_to_dischtimes[hadm_id] = dischtime
+    return hadm_id_to_dischtimes
+
+def patients_phecodes_dischtimes_sql_hosp():
+    # Make a list of the different phecodes
+    with open('phecode_definitions1.2.csv', 'r') as file:
+        amt_of_phecodes = len(file.readlines())
+    phecodes = set()
+    with open('phecode_definitions1.2.csv', 'r') as file:
+        current_line_num = 1
+        while current_line_num <= amt_of_phecodes:
+            current_line = file.readline().split(',')
+            if current_line_num > 1:
+                phecode = current_line[0].split('\"')[1]
+                phecodes.add(phecode)
+                print(phecode)
+            current_line_num += 1
+    # Make a SQL database, patients_phecodes, such that each phecode is a column
+    phecodes_string = ""
+    default_string = ""
+    for phecode in phecodes:
+        phecodes_string += f"`{phecode}`, "
+        default_string += "0, "
+    phecodes_string = phecodes_string.removesuffix(", ")
+    default_string = default_string.removesuffix(", ")
+    print(phecodes_string)
+    print(default_string)
+    con = sqlite3.connect("patients_phecodes_dischtimes.db")
+    cur = con.cursor()
+    cur.execute("DROP TABLE IF EXISTS patients_phecodes_dischtimes;")
+    print(f"CREATE TABLE patients_phecodes_dischtimes (subject_id, {phecodes_string});")
+    cur.execute(f"CREATE TABLE patients_phecodes_dischtimes (subject_id, {phecodes_string});")
+    # Fill in the rows of patients_phecodes such that each row is a patient
+    con2 = sqlite3.connect("admitted_patients.db")
+    cur2 = con2.cursor()
+    cur2.execute("SELECT * FROM admitted_patients;")
+    for row in cur2.fetchall():
+        current_subject_id = row[0]
+        print(f"Current_subject_id: {current_subject_id}")
+        cur.execute(f"INSERT INTO patients_phecodes_dischtimes VALUES (?, {default_string});", 
+                    (current_subject_id,))
+    # Map each subject_id to their phecodes
+    icd10_to_phecodes = icd10_to_phecodes_data_structure()
+    hadm_id_to_dischtimes = hadm_id_to_dischtimes_data_structure()
+    cur = con.cursor()
+    con3 = sqlite3.connect("patients_icd10_codes.db")
+    cur3 = con3.cursor()
+    cur3.execute("SELECT * FROM patients_icd10_codes;")
+    subject_id_to_phecodes_dischtimes = {}
+    for row in cur3.fetchall():
+        current_subject_id = row[0]
+        hadm_id = row[1]
+        icd10_code = row[2]
+        if icd10_code in icd10_to_phecodes:
+            current_phecodes = icd10_to_phecodes[icd10_code]
+            for phecode in current_phecodes:
+                dischtime = hadm_id_to_dischtimes[hadm_id]
+                if phecode in phecodes and (current_subject_id not in subject_id_to_phecodes_dischtimes or tuple([phecode, dischtime]) not in subject_id_to_phecodes_dischtimes[current_subject_id]):
+                    if current_subject_id not in subject_id_to_phecodes_dischtimes:
+                        subject_id_to_phecodes_dischtimes[current_subject_id] = set()
+                    subject_id_to_phecodes_dischtimes[current_subject_id].add(tuple([phecode, dischtime]))
+    # Fill in each row with dischtime for each phecode the row's patient has
+    for current_subject_id in subject_id_to_phecodes_dischtimes.keys():
+        current_phecodes_dischtimes = subject_id_to_phecodes_dischtimes[current_subject_id]
+        current_update_phrase = ""
+        for current_phecode_dischtime in current_phecodes_dischtimes:
+            phecode = current_phecode_dischtime[0]
+            dischtime = current_phecode_dischtime[1]
+            current_update_phrase += f"`{phecode}` = '{dischtime}', "
+        current_update_phrase = current_update_phrase.removesuffix(", ")
+        cur.execute(f"UPDATE patients_phecodes_dischtimes SET {current_update_phrase} WHERE subject_id = {current_subject_id};")
+        print(f"Current_subject_id: {current_subject_id}")
+    con.commit()
+    con2.commit()
+    con3.commit()
+    con2.close()
+    con3.close()
+    cur.execute("SELECT * FROM patients_phecodes_dischtimes")
+    for row in cur.fetchall():
+        print(row)
+    con.commit()
+    con.close()
+
 # csv_to_sql_hosp_admissions()
 # csv_to_sql_hosp_omr()
 # csv_to_sql_hosp_drgcodes()
@@ -368,4 +661,10 @@ def csv_to_sql_hosp_diabetes():
 # csv_to_sql_hosp_omr_summary()
 # csv_to_sql_hosp_d_icd_diagnoses()
 # csv_to_sql_hosp_diagnoses_icd_diabetes()
-csv_to_sql_hosp_diabetes()
+# csv_to_sql_hosp_diabetes()
+# sql_to_sql_hosp_diabetes_filtered()
+# sql_hosp_diabetes_filtered_to_svm() This one has a seg fault for some reason
+admitted_patients()
+patients_icd10_codes()
+icd10_to_phecodes()
+patients_phecodes_dischtimes_sql_hosp()
