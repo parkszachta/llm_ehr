@@ -5,53 +5,6 @@ from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn import svm
 from sklearn import metrics
-import csv
-
-# NOT NECESSARY FOR PHENOTYPING
-def calculate_demographics():
-    gender_list = []
-    anchor_age_list = []
-    with open('mimic-iii-clinical-database-1.4/PATIENTS.csv', 'r') as file:
-        total_lines = len(file.readlines())
-    with open('mimic-iii-clinical-database-1.4/PATIENTS.csv', 'r') as file:
-        current_line_num = 1
-        while current_line_num <= total_lines:
-            current_line = file.readline().split(',')
-            if current_line_num > 1:
-                gender_list.append(current_line[2])
-                # anchor_age_list.append(int(current_line[2]))
-            current_line_num += 1
-    gender_counts = np.unique(gender_list, return_counts=True)
-    num_f = gender_counts[1][0]
-    num_m = gender_counts[1][1]
-    print(f"Number of 'F': {num_f}")
-    print(f"Proportion of 'F': {num_f / (num_f + num_m)}")
-    print(f"Number of 'M': {num_m}")
-    print(f"Proportion of 'M': {num_m / (num_f + num_m)}")
-    # print(f"Mean anchor age: {np.mean(anchor_age_list)}")
-    # print(f"Standard deviation anchor age: {np.std(anchor_age_list)}")
-    # COME BACK HERE
-    con = sqlite3.connect("admitted_patients.db")
-    cur = con.cursor()
-    cur.execute("SELECT race FROM admitted_patients;")
-    race_list = []
-    for row in cur.fetchall():
-        race_list.append(row[0])
-    race_counts = np.unique(race_list, return_counts=True)
-    print(race_counts)
-    num_people = np.sum(race_counts[1])
-    names_of_race_categories = ["AMERICAN INDIAN/ALASKA NATIVE", "ASIAN", "ASIAN - ASIAN INDIAN", "ASIAN - CHINESE", "ASIAN - KOREAN", 
-                                "ASIAN - SOUTH EAST ASIAN", "BLACK/AFRICAN", "BLACK/AFRICAN AMERICAN", "BLACK/CAPE VERDEAN", 
-                                "BLACK/CARRIBEAN ISLAND", "HISPANIC OR LATINO", "HISPANIC/LATINO - CENTRAL AMERICAN", "HISPANIC/LATINO - COLUMBIAN", 
-                                "HISPANIC/LATINO - CUBAN", "HISPANIC/LATINO - DOMINICAN", "HISPANIC/LATINO - GUATEMALAN", "HISPANIC/LATINO - HONDURAN", 
-                                "HISPANIC/LATINO - MEXICAN", "HISPANIC/LATINO - PUERTO RICAN", "HISPANIC/LATINO - SALVADORAN", "MULTIPLE RACE/ETHNICITY", 
-                                "NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER", "OTHER", "PATIENT DECLINED TO ANSWER", "PORTUGUESE", "SOUTH AMERICAN", 
-                                "UNABLE TO OBTAIN", "UNKNOWN", "WHITE", "WHITE - BRAZILIAN", "WHITE - EASTERN EUROPEAN", "WHITE - OTHER EUROPEAN", 
-                                "WHITE - RUSSIAN"]
-    for i in range(len(race_counts[1])):
-        print(f"Number of {names_of_race_categories[i]}: {race_counts[1][i]}")
-        print(f"Proportion of {names_of_race_categories[i]}: {race_counts[1][i] / num_people}")
-
 
 # https://stackoverflow.com/questions/2887878/importing-a-csv-file-into-a-sqlite3-database-table-using-python
 # COMPLETE
@@ -111,27 +64,27 @@ def csv_to_sql_hosp_omr():
     con.commit()
     con.close()
 
-# NOT NECESSARY FOR PHENOTYPING
+# COMPLETE
 def csv_to_sql_hosp_drgcodes():
-    con = sqlite3.connect("drgcodes.db")
+    con = sqlite3.connect("drgcodes_mimic_iii.db")
     cur = con.cursor()
-    cur.execute("DROP TABLE IF EXISTS drgcodes;")
-    cur.execute("CREATE TABLE drgcodes (subject_id, hadm_id, drg_type, drg_code, description, drg_severity, drg_mortality);")
-    with open('mimic-iv-2.2/hosp/drgcodes.csv', 'r') as file:
+    cur.execute("DROP TABLE IF EXISTS drgcodes_mimic_iii;")
+    cur.execute("CREATE TABLE drgcodes_mimic_iii (subject_id, hadm_id, drg_type, drg_code, description, drg_severity, drg_mortality);")
+    with open('mimic-iii-clinical-database-1.4/DRGCODES.csv', 'r') as file:
         total_lines = len(file.readlines())
-    with open('mimic-iv-2.2/hosp/drgcodes.csv', 'r') as file:
+    with open('mimic-iii-clinical-database-1.4/DRGCODES.csv', 'r') as file:
         current_line_num = 1
         while current_line_num <= total_lines:
             current_line = file.readline().split(',')
             if current_line_num > 1:
                 print(current_line_num)
                 print(current_line)
-                subject_id = current_line[0]
-                hadm_id = current_line[1]
-                drg_type = current_line[2]
-                drg_code = current_line[3]
+                subject_id = current_line[1]
+                hadm_id = current_line[2]
+                drg_type = current_line[3]
+                drg_code = current_line[4]
                 description = ""
-                i = 4
+                i = 5
                 while i < len(current_line) - 3:
                     description += current_line[i]
                     description += ","
@@ -140,17 +93,18 @@ def csv_to_sql_hosp_drgcodes():
                 drg_severity = current_line[len(current_line) - 2]
                 drg_mortality = current_line[len(current_line) - 1]
                 drg_mortality = drg_mortality.split('\n')[0]
-                cur.execute("INSERT INTO drgcodes (subject_id, hadm_id, drg_type, drg_code, description, drg_severity, drg_mortality) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                cur.execute("INSERT INTO drgcodes_mimic_iii (subject_id, hadm_id, drg_type, drg_code, description, drg_severity, drg_mortality) VALUES (?, ?, ?, ?, ?, ?, ?);",
                             (subject_id, hadm_id, drg_type, drg_code, description, drg_severity, drg_mortality))
                 con.commit()
             current_line_num += 1
     cur = con.cursor()
-    cur.execute("SELECT * FROM drgcodes;")
+    cur.execute("SELECT * FROM drgcodes_mimic_iii;")
     for row in cur.fetchall():
         print(row)
     con.commit()
     con.close()
 
+# COMPLETE
 def admitted_patients():
     con = sqlite3.connect("admissions_mimic_iii.db")
     cur = con.cursor()
@@ -176,6 +130,56 @@ def admitted_patients():
     con2.commit()
     con.close()
     con2.close()
+
+# COMPLETE
+def calculate_demographics_helper(list_for_gender, ethnicity_condition):
+    gender_list = []
+    with open('mimic-iii-clinical-database-1.4/PATIENTS.csv', 'r') as file:
+        total_lines = len(file.readlines())
+    with open('mimic-iii-clinical-database-1.4/PATIENTS.csv', 'r') as file:
+        current_line_num = 1
+        while current_line_num <= total_lines:
+            current_line = file.readline().split(',')
+            subject_id = current_line[0]
+            if current_line_num > 1 and subject_id not in list_for_gender:
+                gender_list.append(current_line[2])
+            current_line_num += 1
+    gender_counts = np.unique(gender_list, return_counts=True)
+    num_F = gender_counts[1][0]
+    num_M = gender_counts[1][1]
+    print(f"Number of 'F': {num_F}")
+    print(f"Proportion of 'F': {num_F / (num_F + num_M)}")
+    print(f"Number of 'M': {num_M}")
+    print(f"Proportion of 'M': {num_M / (num_F + num_M)}")
+    con = sqlite3.connect("admitted_patients_mimic_iii.db")
+    cur = con.cursor()
+    cur.execute(f"SELECT ethnicity FROM admitted_patients_mimic_iii WHERE {ethnicity_condition};")
+    ethnicity_list = []
+    for row in cur.fetchall():
+        ethnicity_list.append(row[0])
+    ethnicity_counts = np.unique(ethnicity_list, return_counts=True)
+    print(ethnicity_counts)
+    names_of_ethnicity_categories = ethnicity_counts[0]
+    num_people = np.sum(ethnicity_counts[1])
+    for i in range(len(names_of_ethnicity_categories)):
+        print(f"Number of {names_of_ethnicity_categories[i]}: {ethnicity_counts[1][i]}")
+        print(f"Proportion of {names_of_ethnicity_categories[i]}: {ethnicity_counts[1][i] / num_people}")
+
+def calculate_demographics():
+    print("OVERALL DATA:")
+    calculate_demographics_helper([], "1 = 1")
+    con2 = sqlite3.connect("patients_phecodes_dischtimes_mimic_iii.db")
+    cur2 = con2.cursor()
+    cur2.execute("SELECT subject_id FROM patients_phecodes_dischtimes_mimic_iii;")
+    cur2 = con2.cursor()
+    subject_ids = cur2.fetchall()
+    cur2.execute("SELECT subject_id FROM patients_phecodes_dischtimes_mimic_iii WHERE `157` = 0;")
+    subject_ids_not_diagnosed_with_157 = cur2.fetchall()
+    subject_ids_diagnosed_with_157 = [item for item in subject_ids if item not in subject_ids_not_diagnosed_with_157]
+    print("NOT DIAGNOSED WITH `157`:")
+    calculate_demographics_helper(subject_ids_diagnosed_with_157, "WHERE `157` = 0")
+    print("DIAGNOSED WITH `157`:")
+    calculate_demographics_helper(subject_ids_not_diagnosed_with_157, "WHERE `157` <> 0")
 
 # NOT NECESSARY FOR PHENOTYPING
 def csv_to_sql_hosp_omr_summary(phecode=-1):
@@ -294,6 +298,7 @@ def csv_to_sql_hosp_omr_summary(phecode=-1):
     con2.commit()
     con2.close()
 
+# COMPLETE
 def csv_to_sql_hosp_d_icd_diagnoses():
     con = sqlite3.connect("d_icd_diagnoses_mimic_iii.db")
     cur = con.cursor()
@@ -325,6 +330,7 @@ def csv_to_sql_hosp_d_icd_diagnoses():
     con.commit()
     con.close()
 
+# COMPLETE
 def patients_icd_codes():
     con = sqlite3.connect(f"patients_icd9_codes_mimic_iii.db")
     cur = con.cursor()
@@ -366,6 +372,7 @@ def patients_icd_codes():
     con.commit()
     con.close()
 
+# COMPLETE
 def icd_to_phecodes():
     con = sqlite3.connect('icd_to_phecodes.db')
     cur = con.cursor()
@@ -394,6 +401,7 @@ def icd_to_phecodes():
     con.commit()
     con.close()
 
+# COMPLETE
 def icd_to_phecodes_data_structures():
     con = sqlite3.connect('icd_to_phecodes.db')
     cur = con.cursor()
@@ -410,6 +418,7 @@ def icd_to_phecodes_data_structures():
         print(f"Phecode: {phecode}")
     return icd9_to_phecodes
 
+# COMPLETE
 def hadm_id_to_dischtimes_data_structure():
     con = sqlite3.connect('admissions_mimic_iii.db')
     cur = con.cursor()
@@ -421,6 +430,7 @@ def hadm_id_to_dischtimes_data_structure():
         hadm_id_to_dischtimes[hadm_id] = dischtime
     return hadm_id_to_dischtimes
 
+# COMPLETE
 def patients_phecodes_dischtimes_sql_hosp():
     # Make a list of the different phecodes
     with open('phecode_definitions1.2.csv', 'r') as file:
@@ -522,6 +532,7 @@ def patients_phecodes_dischtimes_sql_hosp():
     con.commit()
     con.close()
 
+# NOT NECESSARY FOR PHENOTYPING
 def create_X_and_y_pancreatic_cancer_sql():
     print("Starting create_X_and_y_pancreatic_cancer_sql")
     con = sqlite3.connect("X_and_y_pancreatic_cancer.db")
@@ -686,20 +697,56 @@ def create_csv_of_llm_prompts_pancreatic_cancer():
         csvwriter.writerows(rows)
 '''
 
-# # csv_to_sql_hosp_drgcodes()
-csv_to_sql_hosp_d_icd_diagnoses()
-patients_icd_codes()
-icd_to_phecodes()
+def create_doctor_notes_file():
+    subject_id_to_notes = {}
+    con = sqlite3.connect("admitted_patients_mimic_iii.db")
+    cur = con.cursor()
+    cur.execute("SELECT * FROM admitted_patients_mimic_iii;")
+    for row in cur.fetchall():
+        subject_id = row[0]
+        subject_id_to_notes[subject_id] = ""
+    with open('mimic-iii-clinical-database-1.4/NOTEEVENTS.csv', 'r') as file:
+        total_lines = len(file.readlines())
+        for _ in range(100):
+            print(file.readline().split(','))
+    with open('mimic-iii-clinical-database-1.4/NOTEEVENTS.csv', 'r') as file:
+        current_line = file.readline().split(',')
+        current_line_num = 2
+        while current_line_num <= total_lines:
+            current_line = file.readline().split(',')
+            print(current_line)
+            if len(current_line) > 1:
+                subject_id = current_line[1]
+                text = current_line[10] if len(current_line) > 10 else ""
+                i = 10
+                while i < len(current_line):
+                    text += f",{current_line[i]}"
+                    i += 1
+                text = text.split('\n')[0]
+                if subject_id in subject_id_to_notes.keys():
+                    subject_id_to_notes[subject_id] += text
+            print(current_line_num)
+            current_line_num += 1
+    with open('doctor_notes.txt', 'w') as txtfile:
+        for current_text in subject_id_to_notes.values():
+            txtfile.write(current_text)
 
-csv_to_sql_hosp_admissions()
+# # csv_to_sql_hosp_drgcodes()
+# csv_to_sql_hosp_d_icd_diagnoses()
+# patients_icd_codes()
+# icd_to_phecodes()
+
+# csv_to_sql_hosp_admissions()
 # # csv_to_sql_hosp_omr()
 
-admitted_patients()
-# calculate_demographics()
+# admitted_patients()
+calculate_demographics()
 # csv_to_sql_hosp_omr_summary()
-patients_phecodes_dischtimes_sql_hosp()
+# patients_phecodes_dischtimes_sql_hosp()
 
 # create_X_and_y_pancreatic_cancer_sql()
 # run_svm("X_and_y_pancreatic_cancer")
 
 # create_csv_of_llm_prompts_pancreatic_cancer()
+
+# create_doctor_notes_file()
