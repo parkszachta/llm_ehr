@@ -1,11 +1,10 @@
 import numpy as np
 import sqlite3
-import time
 from datetime import datetime
 from sklearn.model_selection import train_test_split
-from sklearn import svm
+from sklearn import svm as svm_callee
 from sklearn import metrics
-import csv
+from sklearn import linear_model
 
 def calculate_demographics_helper(subject_ids_total, subject_ids_excluded):
     gender_list = []
@@ -685,6 +684,16 @@ def create_X_and_y_pancreatic_cancer_sql():
     cur5.execute("SELECT * FROM patients_gender_and_anchor_age;")
     cur5 = con5.cursor()
     batch_data = []
+    avg_systolic_no_diagnosis = []
+    avg_systolic_yes_diagnosis = []
+    avg_diastolic_no_diagnosis = []
+    avg_diastolic_yes_diagnosis = []
+    avg_weight_no_diagnosis = []
+    avg_weight_yes_diagnosis = []
+    avg_bmi_no_diagnosis = []
+    avg_bmi_yes_diagnosis = []
+    avg_height_no_diagnosis = []
+    avg_height_yes_diagnosis = []
     for row in cur2.fetchall():
         subject_id = row[0]
         print(subject_id)
@@ -729,7 +738,16 @@ def create_X_and_y_pancreatic_cancer_sql():
                 diagnosed_250_24 = 1 if diagnosed_250_24_time != 0 and (diagnosed_157_time == 0 or diagnosed_250_24_time < diagnosed_157_time) else 0
                 diagnosed_577_2 = 1 if diagnosed_577_2_time != 0 and (diagnosed_157_time == 0 or diagnosed_577_2_time < diagnosed_157_time) else 0
                 batch_data.append([diagnosed_157, avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height, marital_status, american_indian_alaska_native, asian, black, hispanic_latino, multiple_race_ethnicity, native_hawaiian_other_pacific_islander, other_declined_unable_unknown, portuguese, south_american, white, male, anchor_age, diagnosed_174, diagnosed_174_1, diagnosed_174_2, diagnosed_250_2, diagnosed_250_21, diagnosed_250_22, diagnosed_250_23, diagnosed_250_24, diagnosed_577_2])
+                avg_systolic_no_diagnosis.append(avg_systolic) if diagnosed_157 == 0 else avg_systolic_yes_diagnosis.append(avg_systolic)
+                avg_diastolic_no_diagnosis.append(avg_diastolic) if diagnosed_157 == 0 else avg_diastolic_yes_diagnosis.append(avg_diastolic)
+                avg_weight_no_diagnosis.append(avg_weight) if diagnosed_157 == 0 else avg_weight_yes_diagnosis.append(avg_weight)
+                avg_bmi_no_diagnosis.append(avg_bmi) if diagnosed_157 == 0 else avg_bmi_yes_diagnosis.append(avg_bmi)
+                avg_height_no_diagnosis.append(avg_height) if diagnosed_157 == 0 else avg_height_yes_diagnosis.append(avg_height)
                 print(f"NOT YET: INSERT INTO X_and_y_pancreatic_cancer (diagnosed_157, avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height, marital_status, american_indian_alaska_native, asian, black, hispanic_latino, multiple_race_ethnicity, native_hawaiian_other_pacific_islander, other_declined_unable_unknown, portuguese, south_american, white, male, anchor_age, `174`, `174.1`, `174.2`, `250.2`, `250.21`, `250.22`, `250.23`, `250.24`, `577.2`) VALUES ({diagnosed_157}, {avg_systolic}, {avg_diastolic}, {avg_weight}, {avg_bmi}, {avg_height}, {marital_status}, {american_indian_alaska_native}, {asian}, {black}, {hispanic_latino}, {multiple_race_ethnicity}, {native_hawaiian_other_pacific_islander}, {other_declined_unable_unknown}, {portuguese}, {south_american}, {white}, {male}, {anchor_age}, {diagnosed_174}, {diagnosed_174_1}, {diagnosed_174_2}, {diagnosed_250_2}, {diagnosed_250_21}, {diagnosed_250_22}, {diagnosed_250_23}, {diagnosed_250_24}, {diagnosed_577_2});")
+                if len(batch_data) > 500:
+                    cur.executemany("INSERT INTO X_and_y_pancreatic_cancer (diagnosed_157, avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height, marital_status, american_indian_alaska_native, asian, black, hispanic_latino, multiple_race_ethnicity, native_hawaiian_other_pacific_islander, other_declined_unable_unknown, portuguese, south_american, white, male, anchor_age, `174`, `174.1`, `174.2`, `250.2`, `250.21`, `250.22`, `250.23`, `250.24`, `577.2`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                    batch_data)
+                    batch_data = []
     cur.executemany("INSERT INTO X_and_y_pancreatic_cancer (diagnosed_157, avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height, marital_status, american_indian_alaska_native, asian, black, hispanic_latino, multiple_race_ethnicity, native_hawaiian_other_pacific_islander, other_declined_unable_unknown, portuguese, south_american, white, male, anchor_age, `174`, `174.1`, `174.2`, `250.2`, `250.21`, `250.22`, `250.23`, `250.24`, `577.2`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
                     batch_data)
     con.commit()
@@ -740,111 +758,130 @@ def create_X_and_y_pancreatic_cancer_sql():
     con2.close()
     con3.close()
     con4.close()
+    avg_systolic_overall = avg_systolic_no_diagnosis + avg_systolic_yes_diagnosis
+    avg_diastolic_overall = avg_diastolic_no_diagnosis + avg_diastolic_yes_diagnosis
+    avg_weight_overall = avg_weight_no_diagnosis + avg_weight_yes_diagnosis
+    avg_bmi_overall = avg_bmi_no_diagnosis + avg_bmi_yes_diagnosis
+    avg_height_overall = avg_height_no_diagnosis + avg_height_yes_diagnosis
+    print(f"Length of avg_systolic_overall: {avg_systolic_overall}")
+    print(f"Mean of avg_systolic_overall: {np.mean(avg_systolic_overall)}")
+    print(f"Standard deviation of avg_systolic_overall: {np.std(avg_systolic_overall)}")
+    print(f"Length of avg_diastolic_overall: {avg_diastolic_overall}")
+    print(f"Mean of avg_diastolic_overall: {np.mean(avg_diastolic_overall)}")
+    print(f"Standard deviation of avg_diastolic_overall: {np.std(avg_diastolic_overall)}")
+    print(f"Length of avg_weight_overall: {avg_weight_overall}")
+    print(f"Mean of avg_weight_overall: {np.mean(avg_weight_overall)}")
+    print(f"Standard deviation of avg_weight_overall: {np.std(avg_weight_overall)}")
+    print(f"Length of avg_bmi_overall: {avg_bmi_overall}")
+    print(f"Mean of avg_bmi_overall: {np.mean(avg_bmi_overall)}")
+    print(f"Standard deviation of avg_bmi_overall: {np.std(avg_bmi_overall)}")
+    print(f"Length of avg_height_overall: {avg_height_overall}")
+    print(f"Mean of avg_height_overall: {np.mean(avg_height_overall)}")
+    print(f"Standard deviation of avg_height_overall: {np.std(avg_height_overall)}")
+    print(f"----------")
+    print(f"Length of avg_systolic_no_diagnosis: {avg_systolic_no_diagnosis}")
+    print(f"Mean of avg_systolic_no_diagnosis: {np.mean(avg_systolic_no_diagnosis)}")
+    print(f"Standard deviation of avg_systolic_no_diagnosis: {np.std(avg_systolic_no_diagnosis)}")
+    print(f"Length of avg_diastolic_no_diagnosis: {avg_diastolic_no_diagnosis}")
+    print(f"Mean of avg_diastolic_no_diagnosis: {np.mean(avg_diastolic_no_diagnosis)}")
+    print(f"Standard deviation of avg_diastolic_no_diagnosis: {np.std(avg_diastolic_no_diagnosis)}")
+    print(f"Length of avg_weight_no_diagnosis: {avg_weight_no_diagnosis}")
+    print(f"Mean of avg_weight_no_diagnosis: {np.mean(avg_weight_no_diagnosis)}")
+    print(f"Standard deviation of avg_weight_no_diagnosis: {np.std(avg_weight_no_diagnosis)}")
+    print(f"Length of avg_bmi_no_diagnosis: {avg_bmi_no_diagnosis}")
+    print(f"Mean of avg_bmi_no_diagnosis: {np.mean(avg_bmi_no_diagnosis)}")
+    print(f"Standard deviation of avg_bmi_no_diagnosis: {np.std(avg_bmi_no_diagnosis)}")
+    print(f"Length of avg_height_no_diagnosis: {avg_height_no_diagnosis}")
+    print(f"Mean of avg_height_no_diagnosis: {np.mean(avg_height_no_diagnosis)}")
+    print(f"Standard deviation of avg_height_no_diagnosis: {np.std(avg_height_no_diagnosis)}")
+    print(f"----------")
+    print(f"Length of avg_systolic_yes_diagnosis: {avg_systolic_yes_diagnosis}")
+    print(f"Mean of avg_systolic_yes_diagnosis: {np.mean(avg_systolic_yes_diagnosis)}")
+    print(f"Standard deviation of avg_systolic_yes_diagnosis: {np.std(avg_systolic_yes_diagnosis)}")
+    print(f"Length of avg_diastolic_yes_diagnosis: {avg_diastolic_yes_diagnosis}")
+    print(f"Mean of avg_diastolic_yes_diagnosis: {np.mean(avg_diastolic_yes_diagnosis)}")
+    print(f"Standard deviation of avg_diastolic_yes_diagnosis: {np.std(avg_diastolic_yes_diagnosis)}")
+    print(f"Length of avg_weight_yes_diagnosis: {avg_weight_yes_diagnosis}")
+    print(f"Mean of avg_weight_yes_diagnosis: {np.mean(avg_weight_yes_diagnosis)}")
+    print(f"Standard deviation of avg_weight_yes_diagnosis: {np.std(avg_weight_yes_diagnosis)}")
+    print(f"Length of avg_bmi_yes_diagnosis: {avg_bmi_yes_diagnosis}")
+    print(f"Mean of avg_bmi_yes_diagnosis: {np.mean(avg_bmi_yes_diagnosis)}")
+    print(f"Standard deviation of avg_bmi_yes_diagnosis: {np.std(avg_bmi_yes_diagnosis)}")
+    print(f"Length of avg_height_yes_diagnosis: {avg_height_yes_diagnosis}")
+    print(f"Mean of avg_height_yes_diagnosis: {np.mean(avg_height_yes_diagnosis)}")
+    print(f"Standard deviation of avg_height_yes_diagnosis: {np.std(avg_height_yes_diagnosis)}")
     print("Ending create_X_and_y_pancreatic_cancer_sql")
 
-def run_svm(X_and_y_database_name):
-    print("Starting run_svm")
+def logistic_regression(X_and_y_database_name):
     X = []
     y = []
     con = sqlite3.connect(f"{X_and_y_database_name}.db")
     cur = con.cursor()
     cur.execute(f"SELECT * FROM {X_and_y_database_name};")
     for row in cur.fetchall():
-        X_entry = row[2:]
-        if "N/A" not in X_entry and "" not in X_entry:
-            X.append(X_entry)
-            y_entry = row[1]
-            y.append(y_entry)
-            con.commit()
+        X.append(row[1:])
+        y.append(row[0])
     con.commit()
     con.close()
     print(f"X length: {len(X)}")
     print(f"First few X: {X[0:20]}")
     print(f"y length: {len(y)}")
-    print(f"All of the y: {y}")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-    clf = svm.SVC(kernel='linear')
-    clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_test)
+    print(f"First few y: {y[0:20]}")
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
+    logreg = linear_model.LogisticRegression(class_weight='balanced', max_iter=10000)
+    logreg.fit(X_train, y_train)
+    y_pred = logreg.predict(X_test)
+    cnf_matrix = metrics.confusion_matrix(y_test, y_pred, labels=[0, 1])
+    print(cnf_matrix)
     print(f"Predicted labels length: {len(y_pred)}")
     print(f"First few predicted labels: {y_pred[0:20]}")
     print(f"Accuracy: {metrics.accuracy_score(y_test, y_pred)}")
     print(f"Precision: {metrics.precision_score(y_test, y_pred)}")
     print(f"Recall: {metrics.recall_score(y_test, y_pred)}")
-    print("Ending run_svm")
+    print(f"F1-Score: {metrics.f1_score(y_test, y_pred)}")
 
-def create_csv_of_llm_prompts_pancreatic_cancer():
-    con = sqlite3.connect("X_and_y_pancreatic_cancer.db")
+def svm(X_and_y_database_name):
+    X = []
+    y = []
+    con = sqlite3.connect(f"{X_and_y_database_name}.db")
     cur = con.cursor()
-    cur.execute("SELECT * FROM X_and_y_pancreatic_cancer;")
-    fields = ["text"]
-    rows = []
-    filename = "llm_prompts.csv"
+    cur.execute(f"SELECT * FROM {X_and_y_database_name};")
     for row in cur.fetchall():
-        _, diagnosed_157, avg_systolic, avg_diastolic, avg_weight, avg_bmi, avg_height, marital_status, american_indian_alaska_native, asian, black, hispanic_latino, multiple_race_ethnicity, native_hawaiian_other_pacific_islander, other_declined_unable_unknown, portuguese, south_american, white, diagnosed_174, diagnosed_174_1, diagnosed_174_2, diagnosed_250_2, diagnosed_250_21, diagnosed_250_22, diagnosed_250_23, diagnosed_250_24, diagnosed_577_2 = row
-        race = "AMERICAN INDIAN/ALASKA NATIVE" if american_indian_alaska_native == 1 else ""
-        race = "ASIAN" if asian == 1 else race
-        race = "BLACK" if black == 1 else race
-        race = "HISPANIC OR LATINO" if hispanic_latino == 1 else race
-        race = "MULTIPLE RACE/ETHNICITY" if multiple_race_ethnicity == 1 else race
-        race = "NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER" if native_hawaiian_other_pacific_islander == 1 else race
-        race = "OTHER, PATIENT DECLINED TO ANSWER, UNABLE TO OBTAIN, OR UNKNOWN" if other_declined_unable_unknown == 1 else race
-        race = "PORTUGUESE" if portuguese == 1 else race
-        race = "SOUTH AMERICAN" if south_american == 1 else race
-        race = "WHITE" if white == 1 else race
-        pancreatic_cancer = "Diagnosed" if diagnosed_157 == 1 else "Not diagnosed"
-        breast_cancer = "Diagnosed" if diagnosed_174 == 1 else "Not diagnosed"
-        breast_cancer_female = "Diagnosed" if diagnosed_174_1 == 1 else "Not diagnosed"
-        breast_cancer_male = "Diagnosed" if diagnosed_174_2 == 1 else "Not diagnosed"
-        type_2_diabetes = "Diagnosed" if diagnosed_250_2 == 1 else "Not diagnosed"
-        type_2_diabetes_with_ketoacidosis = "Diagnosed" if diagnosed_250_21 == 1 else "Not diagnosed"
-        type_2_diabetes_with_renal_manifestations = "Diagnosed" if diagnosed_250_22 == 1 else "Not diagnosed"
-        type_2_diabetes_with_opthalmic_manifestations = "Diagnosed" if diagnosed_250_23 == 1 else "Not diagnosed"
-        type_2_diabetes_with_neurological_manifestations = "Diagnosed" if diagnosed_250_24 == 1 else "Not diagnosed"
-        chronic_pancreatitis = "Diagnosed" if diagnosed_577_2 == 1 else "Not diagnosed"
-        prompt = ""
-        """
-        prompt = f"human: A hospital patient has the following information:
-        Average systolic rate: {avg_systolic} 
-        Average diastolic rate: {avg_diastolic} 
-        Average weight: {avg_weight} 
-        Average BMI: {avg_bmi} 
-        Average height: {avg_height} 
-        Marital status: {marital_status} 
-        Race: {race} 
-        Breast cancer diagnosis status: {breast_cancer} 
-        Breast cancer [female] diagnosis status: {breast_cancer_female} 
-        Breast cancer [male] diagnosis status: {breast_cancer_male} 
-        Type 2 diabetes diagnosis status: {type_2_diabetes} 
-        Type 2 diabetes with ketoacidosis diagnosis status: {type_2_diabetes_with_ketoacidosis} 
-        Type 2 diabetes with renal manifestations diagnosis status: {type_2_diabetes_with_renal_manifestations} 
-        Type 2 diabetes with opthalmic manifestations diagnosis status: {type_2_diabetes_with_opthalmic_manifestations} 
-        Type 2 diabetes with neurological manifestations diagnosis status: {type_2_diabetes_with_neurological_manifestations} 
-        Chronic pancreatitis diagnosis status: {chronic_pancreatitis} 
-        Given the above information, reply with 'Diagnosed' if the patient will be diagnosed with pancreatic cancer and 'Not diagnosed' if not. Only reply with 'Diagnosed' or 'Not diagnosed'. 
-        Pancreatic cancer diagnosis status: \n bot: '{pancreatic_cancer}'"
-        """
-        rows.append([prompt])
-    with open(filename, 'w') as csvfile:
-        csvwriter = csv.writer(csvfile)
-        csvwriter.writerow(fields)
-        csvwriter.writerows(rows)
+        X.append(row[1:])
+        y.append(row[0])
+    con.commit()
+    con.close()
+    print(f"X length: {len(X)}")
+    print(f"First few X: {X[0:20]}")
+    print(f"y length: {len(y)}")
+    print(f"First few y: {y[0:20]}")
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
+    clf = svm_callee.SVC(class_weight='balanced')
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+    cnf_matrix = metrics.confusion_matrix(y_test, y_pred, labels=[0, 1])
+    print(cnf_matrix)
+    print(f"Predicted labels length: {len(y_pred)}")
+    print(f"First few predicted labels: {y_pred[0:20]}")
+    print(f"Accuracy: {metrics.accuracy_score(y_test, y_pred)}")
+    print(f"Precision: {metrics.precision_score(y_test, y_pred)}")
+    print(f"Recall: {metrics.recall_score(y_test, y_pred)}")
+    print(f"F1-Score: {metrics.f1_score(y_test, y_pred)}")
 
 # # csv_to_sql_hosp_drgcodes()
 # # csv_to_sql_hosp_d_icd_diagnoses()
 # patients_icd_codes()
 # icd_to_phecodes()
-
 # # csv_to_sql_hosp_admissions()
 # # csv_to_sql_hosp_omr()
-
-patients_gender_and_anchor_age()
+# patients_gender_and_anchor_age()
 # admitted_patients()
 # calculate_demographics()
 # csv_to_sql_hosp_omr_summary()
 # patients_phecodes_dischtimes_sql_hosp()
 
-create_X_and_y_pancreatic_cancer_sql()
-# run_svm("X_and_y_pancreatic_cancer")
+# create_X_and_y_pancreatic_cancer_sql()
 
-# create_csv_of_llm_prompts_pancreatic_cancer()
+# logistic_regression("X_and_y_pancreatic_cancer")
+
+svm("X_and_y_pancreatic_cancer")
