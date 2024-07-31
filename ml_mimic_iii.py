@@ -1,18 +1,18 @@
 import numpy as np
 import sqlite3
 from datetime import datetime
+from dateutil.relativedelta import relativedelta
 from sklearn.model_selection import train_test_split
-from imblearn.over_sampling import SMOTE
 from sklearn import svm as svm_callee
 from sklearn import metrics
 from sklearn import linear_model
 from sklearn.ensemble import RandomForestClassifier
+import requests
 
 def calculate_demographics_helper(subject_ids_total, subject_ids_excluded):
     subject_ids_included = subject_ids_total - subject_ids_excluded
     gender_list = []
     age_list = []
-    subject_ids_included_but_outlier_age = set()
     con = sqlite3.connect("patients_gender_and_age_mimic_iii.db")
     cur = con.cursor()
     cur.execute("SELECT * FROM patients_gender_and_age_mimic_iii;")
@@ -28,18 +28,13 @@ def calculate_demographics_helper(subject_ids_total, subject_ids_excluded):
             if current_line_num > 1 and subject_id in subject_ids_total and subject_id in subject_ids_included:
                 cur = con.cursor()
                 print(subject_id)
-                subject_id_for_query = f""
                 cur.execute(f"SELECT * FROM patients_gender_and_age_mimic_iii WHERE subject_id = \'\"{subject_id}\"\'")
                 fetched_data = cur.fetchone()
                 print(fetched_data)
                 gender = fetched_data[1]
                 age = fetched_data[2]
-                # Only include patients with ages in between 5th and 95th percentiles
-                if age > 0.000990569625066545 and age < 88.25872975131189:
-                    gender_list.append(gender)
-                    age_list.append(float(age))
-                else:
-                    subject_ids_included_but_outlier_age.add(subject_id)
+                gender_list.append(gender)
+                age_list.append(float(age))
             current_line_num += 1
     gender_counts = np.unique(gender_list, return_counts=True)
     num_F = gender_counts[1][0]
@@ -58,14 +53,16 @@ def calculate_demographics_helper(subject_ids_total, subject_ids_excluded):
     print(f"Interquartile range age: {iqr_age}")
     con = sqlite3.connect("admitted_patients_mimic_iii.db")
     cur = con.cursor()
-    subject_ids_included = subject_ids_included - subject_ids_included_but_outlier_age
     subject_ids_included = repr(subject_ids_included)
     subject_ids_included = "()" if subject_ids_included == "set()" else subject_ids_included.replace('{', '(').replace('}', ')')
-    cur.execute(f"SELECT ethnicity FROM admitted_patients_mimic_iii WHERE subject_id IN {subject_ids_included};")
+    cur.execute(f"SELECT ethnicity, marital_status FROM admitted_patients_mimic_iii WHERE subject_id IN {subject_ids_included};")
     ethnicity_list = []
+    marital_status_list = []
     for row in cur.fetchall():
         ethnicity_list.append(row[0])
+        marital_status_list.append(row[1])
     ethnicity_counts = np.unique(ethnicity_list, return_counts=True)
+    marital_status_counts = np.unique(marital_status_list, return_counts=True)
     print(ethnicity_counts)
     num_people_ethnicity = np.sum(ethnicity_counts[1])
     names_of_ethnicity_categories = ethnicity_counts[0]
@@ -91,6 +88,7 @@ def calculate_demographics_helper(subject_ids_total, subject_ids_excluded):
     print(f"Proportion of WHITE: {white_count / num_people_ethnicity}")
     print(f"Number of Other: {other_count}")
     print(f"Proportion of Other: {other_count / num_people_ethnicity}")
+    print(f"Marital Status Counts: {marital_status_counts}")
 
 def calculate_demographics():
     con = sqlite3.connect("admitted_patients_mimic_iii.db")
@@ -118,18 +116,34 @@ def calculate_demographics():
         subject_ids_not_diagnosed_with_157_temp.add(item[0])
     subject_ids_not_diagnosed_with_157 = subject_ids_not_diagnosed_with_157_temp.intersection(admitted_patients)
     subject_ids_diagnosed_with_157 = subject_ids - subject_ids_not_diagnosed_with_157
-    print(subject_ids)
-    print("subject_ids ^^^")
-    print(subject_ids_not_diagnosed_with_157)
-    print("subject_ids_not_diagnosed_with_157 ^^^")
-    print(subject_ids_diagnosed_with_157)
-    print("subject_ids_diagnosed_with_157 ^^^")
+    cur2.execute("SELECT subject_id FROM patients_phecodes_dischtimes_mimic_iii WHERE `250.2` = 0;")
+    subject_ids_not_diagnosed_with_250_2 = cur2.fetchall()
+    subject_ids_not_diagnosed_with_250_2_temp = set()
+    for item in subject_ids_not_diagnosed_with_250_2:
+        subject_ids_not_diagnosed_with_250_2_temp.add(item[0])
+    subject_ids_not_diagnosed_with_250_2 = subject_ids_not_diagnosed_with_250_2_temp.intersection(admitted_patients)
+    subject_ids_diagnosed_with_250_2 = subject_ids - subject_ids_not_diagnosed_with_250_2
+    cur2.execute("SELECT subject_id FROM patients_phecodes_dischtimes_mimic_iii WHERE `994.2` = 0;")
+    subject_ids_not_diagnosed_with_994_2 = cur2.fetchall()
+    subject_ids_not_diagnosed_with_994_2_temp = set()
+    for item in subject_ids_not_diagnosed_with_994_2:
+        subject_ids_not_diagnosed_with_994_2_temp.add(item[0])
+    subject_ids_not_diagnosed_with_994_2 = subject_ids_not_diagnosed_with_994_2_temp.intersection(admitted_patients)
+    subject_ids_diagnosed_with_994_2 = subject_ids - subject_ids_not_diagnosed_with_994_2
     print("OVERALL DATA:")
     calculate_demographics_helper(subject_ids, set())
     print("NOT DIAGNOSED WITH `157`:")
     calculate_demographics_helper(subject_ids, subject_ids_diagnosed_with_157)
     print("DIAGNOSED WITH `157`:")
     calculate_demographics_helper(subject_ids, subject_ids_not_diagnosed_with_157)
+    print("NOT DIAGNOSED WITH `250.2`:")
+    calculate_demographics_helper(subject_ids, subject_ids_diagnosed_with_250_2)
+    print("DIAGNOSED WITH `250.2`:")
+    calculate_demographics_helper(subject_ids, subject_ids_not_diagnosed_with_250_2)
+    print("NOT DIAGNOSED WITH `994.2`:")
+    calculate_demographics_helper(subject_ids, subject_ids_diagnosed_with_994_2)
+    print("DIAGNOSED WITH `994.2`:")
+    calculate_demographics_helper(subject_ids, subject_ids_not_diagnosed_with_994_2)
 
 def csv_to_sql_hosp_admissions():
     con = sqlite3.connect("admissions_mimic_iii.db")
@@ -511,27 +525,33 @@ def create_X_and_y(phecode_to_be_predicted):
         if gender_and_age_row is not None:
             male = 1 if gender_and_age_row[0] == "M" else 0
             age = float(gender_and_age_row[1])
-            if age > 0.000990569625066545 and age < 88.25872975131189:
-                cur4.execute(f"SELECT `{phecode_to_be_predicted}`, {phecodes_string} FROM patients_phecodes_dischtimes_mimic_iii WHERE subject_id = '{subject_id}';")
-                diagnosed_times = cur4.fetchone()
-                phecode_to_be_predicted_diagnosed_time = diagnosed_times[0]
-                phecode_to_be_predicted_diagnosed = 1 if phecode_to_be_predicted_diagnosed_time != 0 else 0
-                predictor_diagnosed_values = []
-                for i in range(1, len(diagnosed_times), 1):
-                    predictor_diagnosed_value = 1 if diagnosed_times[i] != 0 and (phecode_to_be_predicted_diagnosed == 0 or datetime.strptime(diagnosed_times[i], '%Y-%m-%d %H:%M:%S') < datetime.strptime(phecode_to_be_predicted_diagnosed_time, '%Y-%m-%d %H:%M:%S')) else 0
-                    predictor_diagnosed_values.append(predictor_diagnosed_value)
-                data_to_be_appended = [phecode_to_be_predicted_diagnosed, marital_status, black, white, male, age] + predictor_diagnosed_values
-                batch_data.append(data_to_be_appended)
-                insertion_string = ""
-                for i in range(0, len(data_to_be_appended) - 1, 1):
-                    insertion_string += str(data_to_be_appended[i])
-                    insertion_string += ", "
-                insertion_string += str(data_to_be_appended[len(data_to_be_appended) - 1])
-                print(f"NOT YET: INSERT INTO X_and_y_{phecode_to_be_predicted_without_decimal}_mimic_iii ({database_columns}) VALUES ({insertion_string});")
-                if len(batch_data) > 500:
-                    cur.executemany(f"INSERT INTO X_and_y_{phecode_to_be_predicted_without_decimal}_mimic_iii ({database_columns}) VALUES ({question_string});",
-                    batch_data)
-                    batch_data = []
+            cur4.execute(f"SELECT `{phecode_to_be_predicted}`, {phecodes_string} FROM patients_phecodes_dischtimes_mimic_iii WHERE subject_id = '{subject_id}';")
+            diagnosed_times = cur4.fetchone()
+            print(diagnosed_times)
+            phecode_to_be_predicted_diagnosed_time = diagnosed_times[0]
+            phecode_to_be_predicted_diagnosed = 1 if phecode_to_be_predicted_diagnosed_time != 0 else 0
+            print(phecode_to_be_predicted_diagnosed)
+            predictor_diagnosed_values = []
+            for i in range(1, len(diagnosed_times), 1):
+                predictor_diagnosed_value = 1 if diagnosed_times[i] != 0 and (phecode_to_be_predicted_diagnosed == 0 or datetime.strptime(diagnosed_times[i], '%Y-%m-%d %H:%M:%S') + relativedelta(years=1) < datetime.strptime(phecode_to_be_predicted_diagnosed_time, '%Y-%m-%d %H:%M:%S')) else 0
+                if diagnosed_times[i] != 0 and phecode_to_be_predicted_diagnosed != 0:
+                    print(datetime.strptime(diagnosed_times[i], '%Y-%m-%d %H:%M:%S'))
+                    print(datetime.strptime(diagnosed_times[i], '%Y-%m-%d %H:%M:%S') + relativedelta(years=1))
+                    print(datetime.strptime(phecode_to_be_predicted_diagnosed_time, '%Y-%m-%d %H:%M:%S'))
+                    print(predictor_diagnosed_value)
+                predictor_diagnosed_values.append(predictor_diagnosed_value)
+            data_to_be_appended = [phecode_to_be_predicted_diagnosed, marital_status, black, white, male, age] + predictor_diagnosed_values
+            batch_data.append(data_to_be_appended)
+            insertion_string = ""
+            for i in range(0, len(data_to_be_appended) - 1, 1):
+                insertion_string += str(data_to_be_appended[i])
+                insertion_string += ", "
+            insertion_string += str(data_to_be_appended[len(data_to_be_appended) - 1])
+            print(f"NOT YET: INSERT INTO X_and_y_{phecode_to_be_predicted_without_decimal}_mimic_iii ({database_columns}) VALUES ({insertion_string});")
+            if len(batch_data) > 500:
+                cur.executemany(f"INSERT INTO X_and_y_{phecode_to_be_predicted_without_decimal}_mimic_iii ({database_columns}) VALUES ({question_string});",
+                batch_data)
+                batch_data = []
     cur.executemany(f"INSERT INTO X_and_y_{phecode_to_be_predicted_without_decimal}_mimic_iii ({database_columns}) VALUES ({question_string});",
                     batch_data)
     con.commit()
@@ -572,7 +592,7 @@ def logistic_regression(phecode_to_be_predicted_without_decimal):
     print(f"y_train length: {len(y_train)}")
     print(f"y_train amount of 0: {y_train.count(0)}")
     print(f"y_train amount of 1: {y_train.count(1)}")
-    logreg = linear_model.LogisticRegression(class_weight='balanced', max_iter=10000)
+    logreg = linear_model.LogisticRegression(max_iter=10000)
     logreg.fit(X_train, y_train)
     y_probs = logreg.predict_proba(X_test)[:, 1]
     thresholds = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
@@ -656,38 +676,148 @@ def random_forest(X_and_y_database_name):
     print(f"F1-Score: {metrics.f1_score(y_test, y_pred)}")
 
 def create_medical_notes_file():
-    subject_id_to_notes = {}
-    con = sqlite3.connect("admitted_patients_mimic_iii.db")
+    con = sqlite3.connect("medical_notes_mimic_iii.db")
     cur = con.cursor()
-    cur.execute("SELECT * FROM admitted_patients_mimic_iii;")
-    for row in cur.fetchall():
-        subject_id = row[0]
-        subject_id_to_notes[subject_id] = ""
+    cur.execute("DROP TABLE IF EXISTS medical_notes_mimic_iii;")
+    cur.execute("CREATE TABLE medical_notes_mimic_iii (subject_id, chartdate, text);")
     with open('mimic-iii-clinical-database-1.4/NOTEEVENTS.csv', 'r') as file:
         total_lines = len(file.readlines())
-        for _ in range(100):
-            print(file.readline().split(','))
     with open('mimic-iii-clinical-database-1.4/NOTEEVENTS.csv', 'r') as file:
         current_line = file.readline().split(',')
         current_line_num = 2
+        subject_id = 0
+        chartdate = 0
+        text = ""
+        batch_data = []
         while current_line_num <= total_lines:
             current_line = file.readline().split(',')
-            print(current_line)
-            if len(current_line) > 1:
+            if current_line_num == 2:
                 subject_id = current_line[1]
-                text = current_line[10] if len(current_line) > 10 else ""
-                i = 11
-                while i < len(current_line):
-                    text += f",{current_line[i]}"
-                    i += 1
-                text = text.split('\n')[0]
-                if subject_id in subject_id_to_notes.keys():
-                    subject_id_to_notes[subject_id] += text
+                chartdate = datetime.strptime(current_line[3], '%Y-%m-%d')
+                text = ""
+                for i in range(10, len(current_line), 1):
+                    text += current_line[i]
+            elif len(current_line) >= 11 and len(current_line[1]) <= 5 and len(current_line[2]) == 6 and len(current_line[3].split('-')) == 3 and len(current_line[3].split('-')[0]) == 4 and len(current_line[3].split('-')[1]) == 2 and len(current_line[3].split('-')[2]) == 2:
+                batch_data.append([subject_id, chartdate, text])
+                print(f"NOT YET: INSERT INTO medical_notes_mimic_iii (subject_id, chartdate, text) VALUES ({subject_id}, {chartdate}, {text});")
+                subject_id = current_line[1]
+                chartdate = datetime.strptime(current_line[3], '%Y-%m-%d')
+                text = ""
+                for i in range(10, len(current_line), 1):
+                    text += current_line[i]
+            else:
+                for i in range(len(current_line)):
+                    text += current_line[i]
+            if len(batch_data) > 500:
+                cur.executemany(f"INSERT INTO medical_notes_mimic_iii (subject_id, chartdate, text) VALUES (?, ?, ?);",
+                    batch_data)
+                con.commit()
+                batch_data = []
             print(current_line_num)
             current_line_num += 1
-    with open('doctor_notes.txt', 'w') as txtfile:
-        for current_text in subject_id_to_notes.values():
-            txtfile.write(current_text)
+        cur.executemany(f"INSERT INTO medical_notes_mimic_iii (subject_id, chartdate, text) VALUES (?, ?, ?);",
+                    batch_data)
+        con.commit()
+        batch_data = []
+        cur.execute(f"SELECT * FROM medical_notes_mimic_iii;")
+        print(len(cur.fetchall()))
+        con.commit()
+        con.close()
+
+def llama3(prompt):
+    data = {
+        "model": "llama3",
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "stream": False
+    }
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    response = requests.post("http://localhost:11434/api/chat", headers=headers, json=data)
+    return(response.json()['message']['content'])
+
+def create_phenotyping_llm_labels_helper(events_subset):
+    prompt = '''You are phenotyping a patient for pancreatic cancer. If they have never had pancreatic cancer, 
+    respond with 0. If they have had pancreatic cancer, respond with the date in YYYY-MM-DD format of when they 
+    first got pancreatic cancer. You must respond with 0 or YYYY-MM-DD, and you must respond with nothing else. 
+    Here is a timeline of medical event(s) the patient has had:'''
+    prompt_reminder = '''Here is a reminder of the task: You are phenotyping a patient for pancreatic cancer. 
+    If they have never had pancreatic cancer, respond with 0. If they have had pancreatic cancer, respond with the date 
+    in YYYY-MM-DD format of when they first got pancreatic cancer. You must respond with 0 or YYYY-MM-DD, and you must 
+    respond with nothing else.'''
+    prompt = [prompt] + events_subset + [prompt_reminder]
+    prompt = "\n".join(prompt)
+    return llama3(prompt)
+
+def create_phenotyping_llm_labels():
+    con = sqlite3.connect("medical_notes_mimic_iii.db")
+    cur = con.cursor()
+    con2 = sqlite3.connect("patients_phecodes_dischtimes_mimic_iii.db")
+    cur2 = con2.cursor()
+    con3 = sqlite3.connect("phenotyping_llm_features_mimic_iii.db")
+    cur3 = con3.cursor()
+    cur3.execute("DROP TABLE IF EXISTS phenotyping_llm_features_mimic_iii;")
+    cur3.execute("CREATE TABLE phenotyping_llm_features_mimic_iii (subject_id, `157`, `250.2`, `994.2`);")
+    con4 = sqlite3.connect("admitted_patients_mimic_iii.db")
+    cur4 = con4.cursor()
+    cur4.execute("SELECT subject_id FROM admitted_patients_mimic_iii;")
+    batch_data = []
+    for row in cur4.fetchall():
+        events = []
+        subject_id = row[0]
+        print(f"subject_id is {subject_id}")
+        cur2.execute(f"SELECT `157` FROM patients_phecodes_dischtimes_mimic_iii WHERE subject_id = '{subject_id}';")
+        diagnosed_157 = cur2.fetchone()[0]
+        if diagnosed_157 != 0:
+            events.append([str(diagnosed_157), "Diagnosed with 157"])
+        cur.execute(f"SELECT chartdate, text FROM medical_notes_mimic_iii WHERE subject_id = \"{subject_id}\";")
+        for row in cur.fetchall():
+            chartdate = row[0]
+            text = row[1]
+            events.append([chartdate, text])
+        events = sorted(events)
+        events_temp = []
+        for event in events:
+            timestamp = event[0]
+            text = event[1]
+            if text == "Diagnosed with 157":
+                events_temp.append(f"On the date and time of {timestamp}, the patient was diagnosed with PheCode 157.")
+            else:
+                events_temp.append(f"On the date and time of {timestamp}, the following medical note was created for the patient: {text}")
+        if diagnosed_157 == 0:
+            events_temp.append(f"The patient was never diagnosed with PheCode 157.")
+        events = events_temp
+        pancreatic_cancer_diagnosis = 0
+        print(f"The total number of events is {len(events)}")
+        print(f"The actual value of diagnosed_157 is {diagnosed_157}")
+        pancreatic_cancer_diagnosis = create_phenotyping_llm_labels_helper(events)
+        if pancreatic_cancer_diagnosis == "0":
+            pancreatic_cancer_diagnosis = 0
+        else:
+            pancreatic_cancer_diagnosis = datetime.strptime(pancreatic_cancer_diagnosis, '%Y-%m-%d')
+        batch_data.append([subject_id, pancreatic_cancer_diagnosis])
+        print(f"NOT YET: INSERT INTO phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis) VALUES ({subject_id}, {pancreatic_cancer_diagnosis});")
+        if len(batch_data) > 500:
+            cur.executemany(f"INSERT INTO phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis) VALUES (?, ?);",
+                            batch_data)
+            con.commit()
+            batch_data = []
+    cur.executemany(f"INSERT INTO phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis) VALUES (?, ?);",
+                    batch_data)
+    batch_data = []
+    con.commit()
+    con.close()
+    con2.commit()
+    con2.close()
+    con3.commit()
+    con3.close()
+    con4.commit()
+    con4.close()
 
 # csv_to_sql_hosp_drgcodes()
 # patients_icd_codes()
@@ -700,11 +830,14 @@ def create_medical_notes_file():
 
 # create_X_and_y("157")
 # create_X_and_y("250.2")
+# create_X_and_y("994.2")
 
-logistic_regression("157")
+# logistic_regression("157")
 # logistic_regression("2502")
+# logistic_regression("9942")
 
 # svm("X_and_y_pancreatic_cancer_mimic_iii")
 # random_forest("X_and_y_pancreatic_cancer_mimic_iii")
 
 # create_medical_notes_file()
+create_phenotyping_llm_labels()
