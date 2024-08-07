@@ -8,6 +8,8 @@ from sklearn import metrics
 from sklearn import linear_model
 from sklearn.ensemble import RandomForestClassifier
 import requests
+import json
+import random
 
 def calculate_demographics_helper(subject_ids_total, subject_ids_excluded):
     subject_ids_included = subject_ids_total - subject_ids_excluded
@@ -434,8 +436,6 @@ def patients_phecodes_dischtimes_sql_hosp(phecodes_string_only=False, phecode_to
     con3 = sqlite3.connect("patients_icd9_codes_mimic_iii.db")
     cur3 = con3.cursor()
     cur3.execute("SELECT * FROM patients_icd9_codes_mimic_iii;")
-    cur3 = con3.cursor()
-    cur3.execute("SELECT * FROM patients_icd9_codes_mimic_iii;")
     subject_id_to_phecodes_dischtimes = {}
     for row in cur3.fetchall():
         print(f"cur3 row: {row}")
@@ -618,35 +618,6 @@ def logistic_regression(phecode_to_be_predicted_without_decimal):
     print(f"F1-Scores: {f1_scores}")
     print(f"AUC: {AUCs}")
 
-def svm(X_and_y_database_name):
-    X = []
-    y = []
-    con = sqlite3.connect(f"{X_and_y_database_name}.db")
-    cur = con.cursor()
-    cur.execute(f"SELECT * FROM {X_and_y_database_name};")
-    for row in cur.fetchall():
-        X.append(row[1:])
-        y.append(row[0])
-    con.commit()
-    con.close()
-    print(f"X length: {len(X)}")
-    print(f"First few X: {X[0:20]}")
-    print(f"y length: {len(y)}")
-    print(f"First few y: {y[0:20]}")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
-    clf = svm_callee.LinearSVC(class_weight='balanced')
-    # clf = svm_callee.SVC(class_weight='balanced')
-    clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_test)
-    cnf_matrix = metrics.confusion_matrix(y_test, y_pred, labels=[0, 1])
-    print(cnf_matrix)
-    print(f"Predicted labels length: {len(y_pred)}")
-    print(f"First few predicted labels: {y_pred[0:20]}")
-    print(f"Accuracy: {metrics.accuracy_score(y_test, y_pred)}")
-    print(f"Precision: {metrics.precision_score(y_test, y_pred)}")
-    print(f"Recall: {metrics.recall_score(y_test, y_pred)}")
-    print(f"F1-Score: {metrics.f1_score(y_test, y_pred)}")
-
 def random_forest(X_and_y_database_name):
     X = []
     y = []
@@ -731,25 +702,28 @@ def llama3(prompt):
             {
                 "role": "user",
                 "content": prompt
+
             }
         ],
-        "stream": False
+        "stream": False,
     }
     headers = {
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json"
     }
-    response = requests.post("http://localhost:11434/api/chat", headers=headers, json=data)
-    return(response.json()['message']['content'])
+    response = requests.post(url="http://localhost:11434/api/chat", headers=headers, json=data)
+    return response.json()["message"]["content"]
 
-def create_phenotyping_llm_labels_helper(events_subset):
-    prompt = '''You are phenotyping a patient for pancreatic cancer. If they have never had pancreatic cancer, 
-    respond with 0. If they have had pancreatic cancer, respond with the date in YYYY-MM-DD format of when they 
-    first got pancreatic cancer. You must respond with 0 or YYYY-MM-DD, and you must respond with nothing else. 
-    Here is a timeline of medical event(s) the patient has had:'''
-    prompt_reminder = '''Here is a reminder of the task: You are phenotyping a patient for pancreatic cancer. 
-    If they have never had pancreatic cancer, respond with 0. If they have had pancreatic cancer, respond with the date 
-    in YYYY-MM-DD format of when they first got pancreatic cancer. You must respond with 0 or YYYY-MM-DD, and you must 
-    respond with nothing else.'''
+def create_phenotyping_llm_labels_helper(events_subset, condition):
+    prompt = f'''You are phenotyping a patient for {condition}. If they have never had {condition}, 
+    respond with 0. If they have had {condition}, respond with the date in YYYY-MM-DD format of when they 
+    first got {condition}. You must respond with 0 or YYYY-MM-DD, and you must respond with nothing else. 
+    If you respond in YYYY-MM-DD format, you must fill in each digit of the date. Here is a timeline of 
+    medical event(s) the patient has had:'''
+    prompt_reminder = f'''Here is a reminder of the task: You are phenotyping a patient for {condition}. 
+    If they have never had {condition}, respond with 0. If they have had {condition}, respond with the date 
+    in YYYY-MM-DD format of when they first got {condition}. If you respond in YYYY-MM-DD format, you must 
+    fill in each digit of the date.You must respond with 0 or YYYY-MM-DD, and you must respond with nothing 
+    else.'''
     prompt = [prompt] + events_subset + [prompt_reminder]
     prompt = "\n".join(prompt)
     return llama3(prompt)
@@ -762,24 +736,32 @@ def create_phenotyping_llm_labels():
     con3 = sqlite3.connect("phenotyping_llm_features_mimic_iii.db")
     cur3 = con3.cursor()
     cur3.execute("DROP TABLE IF EXISTS phenotyping_llm_features_mimic_iii;")
-    cur3.execute("CREATE TABLE phenotyping_llm_features_mimic_iii (subject_id, `157`, `250.2`, `994.2`);")
+    cur3.execute("CREATE TABLE phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis, type_2_diabetes_diagnosis, sepsis_diagnosis);")
     con4 = sqlite3.connect("admitted_patients_mimic_iii.db")
     cur4 = con4.cursor()
     cur4.execute("SELECT subject_id FROM admitted_patients_mimic_iii;")
     batch_data = []
-    for row in cur4.fetchall():
+    row_num = 1
+    for row in cur4.fetchall()[:1000]:
+        print(row_num)
+        row_num += 1
         events = []
         subject_id = row[0]
-        print(f"subject_id is {subject_id}")
-        cur2.execute(f"SELECT `157` FROM patients_phecodes_dischtimes_mimic_iii WHERE subject_id = '{subject_id}';")
-        diagnosed_157 = cur2.fetchone()[0]
-        if diagnosed_157 != 0:
-            events.append([str(diagnosed_157), "Diagnosed with 157"])
+        print(f"subject_id is {subject_id}")  
         cur.execute(f"SELECT chartdate, text FROM medical_notes_mimic_iii WHERE subject_id = \"{subject_id}\";")
         for row in cur.fetchall():
             chartdate = row[0]
             text = row[1]
             events.append([chartdate, text])
+        events = random.sample(events, int(0.4 * len(events)))
+        cur2.execute(f"SELECT `157`, `250.2`, `994.2` FROM patients_phecodes_dischtimes_mimic_iii WHERE subject_id = '{subject_id}';")
+        diagnosed_157, diagnosed_250_2, diagnosed_994_2 = cur2.fetchone()
+        if diagnosed_157 != 0:
+            events.append([str(diagnosed_157), "Diagnosed with 157"])
+        if diagnosed_250_2 != 0:
+            events.append([str(diagnosed_250_2), "Diagnosed with 250.2"])
+        if diagnosed_994_2 != 0:
+            events.append([str(diagnosed_994_2), "Diagnosed with 994.2"]) 
         events = sorted(events)
         events_temp = []
         for event in events:
@@ -787,27 +769,62 @@ def create_phenotyping_llm_labels():
             text = event[1]
             if text == "Diagnosed with 157":
                 events_temp.append(f"On the date and time of {timestamp}, the patient was diagnosed with PheCode 157.")
+            elif text == "Diagnosed with 250.2":
+                events_temp.append(f"On the date and time of {timestamp}, the patient was diagnosed with PheCode 250.2.")
+            elif text == "Diagnosed with 994.2":
+                events_temp.append(f"On the date and time of {timestamp}, the patient was diagnosed with PheCode 994.2.")
             else:
                 events_temp.append(f"On the date and time of {timestamp}, the following medical note was created for the patient: {text}")
         if diagnosed_157 == 0:
             events_temp.append(f"The patient was never diagnosed with PheCode 157.")
+        if diagnosed_250_2 == 0:
+            events_temp.append(f"The patient was never diagnosed with PheCode 250.2.")
+        if diagnosed_994_2 == 0:
+            events_temp.append(f"The patient was never diagnosed with PheCode 994.2.")
         events = events_temp
+        print(events)
         pancreatic_cancer_diagnosis = 0
-        print(f"The total number of events is {len(events)}")
-        print(f"The actual value of diagnosed_157 is {diagnosed_157}")
-        pancreatic_cancer_diagnosis = create_phenotyping_llm_labels_helper(events)
+        type_2_diabetes_diagnosis = 0
+        sepsis_diagnosis = 0
+        pancreatic_cancer_diagnosis = create_phenotyping_llm_labels_helper(events, "pancreatic cancer")
         if pancreatic_cancer_diagnosis == "0":
             pancreatic_cancer_diagnosis = 0
         else:
-            pancreatic_cancer_diagnosis = datetime.strptime(pancreatic_cancer_diagnosis, '%Y-%m-%d')
-        batch_data.append([subject_id, pancreatic_cancer_diagnosis])
-        print(f"NOT YET: INSERT INTO phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis) VALUES ({subject_id}, {pancreatic_cancer_diagnosis});")
-        if len(batch_data) > 500:
-            cur.executemany(f"INSERT INTO phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis) VALUES (?, ?);",
+            try:
+                pancreatic_cancer_diagnosis = datetime.strptime(pancreatic_cancer_diagnosis, '%Y-%m-%d')
+            except ValueError:
+                print("ValueError")
+                continue
+        type_2_diabetes_diagnosis = create_phenotyping_llm_labels_helper(events, "type 2 diabetes")
+        if type_2_diabetes_diagnosis == "0":
+            type_2_diabetes_diagnosis = 0
+        else:
+            try:
+                type_2_diabetes_diagnosis = datetime.strptime(type_2_diabetes_diagnosis, '%Y-%m-%d')
+            except ValueError:
+                print("ValueError")
+                continue
+        sepsis_diagnosis = create_phenotyping_llm_labels_helper(events, "sepsis")
+        if sepsis_diagnosis == "0":
+            sepsis_diagnosis = 0
+        else:
+            try:
+                sepsis_diagnosis = datetime.strptime(sepsis_diagnosis, '%Y-%m-%d')
+            except ValueError:
+                print("ValueError")
+                continue
+        print(f"The total number of events is {len(events)}")
+        print(f"The actual value of pancreatic_cancer_diagnosis is {pancreatic_cancer_diagnosis}")
+        print(f"The actual value of type_2_diagnosis is {type_2_diabetes_diagnosis}")
+        print(f"The actual value of sepsis_diagnosis is {sepsis_diagnosis}")
+        batch_data.append([subject_id, pancreatic_cancer_diagnosis, type_2_diabetes_diagnosis, sepsis_diagnosis])
+        print(f"NOT YET: INSERT INTO phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis, type_2_diabetes_diagnosis, sepsis_diagnosis) VALUES ({subject_id}, {pancreatic_cancer_diagnosis}, {type_2_diabetes_diagnosis}, {sepsis_diagnosis});")
+        if len(batch_data) > 100:
+            cur3.executemany(f"INSERT INTO phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis, type_2_diabetes_diagnosis, sepsis_diagnosis) VALUES (?, ?, ?, ?);",
                             batch_data)
-            con.commit()
+            con3.commit()
             batch_data = []
-    cur.executemany(f"INSERT INTO phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis) VALUES (?, ?);",
+    cur3.executemany(f"INSERT INTO phenotyping_llm_features_mimic_iii (subject_id, pancreatic_cancer_diagnosis, type_2_diabetes_diagnosis, sepsis_diagnosis) VALUES (?, ?, ?, ?);",
                     batch_data)
     batch_data = []
     con.commit()
@@ -818,6 +835,184 @@ def create_phenotyping_llm_labels():
     con3.close()
     con4.commit()
     con4.close()
+
+def create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes(phecode_to_be_predicted_without_decimal, phecode_to_be_predicted_with_decimal):
+    print(f"Starting create_X_and_y_predicting_llm_labels")
+    black_categories = ['"BLACK/AFRICAN AMERICAN"', '"BLACK/AFRICAN"', '"BLACK/CAPE VERDEAN"', '"BLACK/HAITIAN"']
+    white_categories = ['"WHITE - BRAZILIAN"', '"WHITE - EASTERN EUROPEAN"', '"WHITE - OTHER EUROPEAN"', '"WHITE - RUSSIAN"', '"WHITE"']
+    con = sqlite3.connect("admitted_patients_mimic_iii.db")
+    cur = con.cursor()
+    cur.execute("SELECT * FROM admitted_patients_mimic_iii;")
+    con2 = sqlite3.connect("patients_icd9_codes_mimic_iii.db")
+    cur2 = con2.cursor()
+    con3 = sqlite3.connect("patients_gender_and_age_mimic_iii.db")
+    cur3 = con3.cursor()
+    con4 = sqlite3.connect(f"X_and_y_{phecode_to_be_predicted_without_decimal}_llm_mimic_iii.db")
+    cur4 = con4.cursor()
+    cur4.execute(f"DROP TABLE IF EXISTS X_and_y_{phecode_to_be_predicted_without_decimal}_llm_mimic_iii;")
+    cur4.execute(f"CREATE TABLE X_and_y_{phecode_to_be_predicted_without_decimal}_llm_mimic_iii (`{phecode_to_be_predicted_without_decimal}`, marital_status, black, white, male, age, other_phecodes_dischtimes);")
+    batch_data = []
+    with open('phecode_definitions1.2.csv', 'r') as file:
+        amt_of_phecodes = len(file.readlines())
+    phecodes = set()
+    with open('phecode_definitions1.2.csv', 'r') as file:
+        current_line_num = 1
+        while current_line_num <= amt_of_phecodes:
+            current_line = file.readline().split(',')
+            if current_line_num > 1:
+                phecode = current_line[0].split('\"')[1]
+                phecodes.add(phecode)
+                print(phecode)
+            current_line_num += 1
+    icd9_to_phecodes = icd_to_phecodes_data_structures()
+    hadm_id_to_dischtimes = hadm_id_to_dischtimes_data_structure()
+    cur2.execute(f"SELECT * FROM patients_icd9_codes_mimic_iii;")
+    subject_id_to_phecodes_dischtimes = {}
+    for row in cur2.fetchall():
+        print(f"cur2 row: {row}")
+        current_subject_id = row[0]
+        hadm_id = row[1]
+        if row[2] != '':
+            icd9_code = row[2].split('\"')[1]
+            print(icd9_code)
+            if icd9_code in icd9_to_phecodes:
+                current_phecodes = icd9_to_phecodes[icd9_code]
+                for phecode in current_phecodes:
+                    dischtime = hadm_id_to_dischtimes[hadm_id]
+                    if phecode in phecodes:
+                        if current_subject_id not in subject_id_to_phecodes_dischtimes.keys():
+                            subject_id_to_phecodes_dischtimes[current_subject_id] = set()
+                        phecode_is_in_tuple_already = False
+                        for current in subject_id_to_phecodes_dischtimes[current_subject_id]:
+                            if phecode == current[0]:
+                                phecode_is_in_tuple_already = True
+                        if not phecode_is_in_tuple_already:
+                            subject_id_to_phecodes_dischtimes[current_subject_id].add(tuple([phecode, dischtime]))
+                            print("ICD9:")
+                            print(tuple([phecode, dischtime]))
+    for row in cur.fetchall()[:1000]:
+        subject_id = row[0]
+        marital_status = 1 if row[2] == '"MARRIED"' else 0
+        ethnicity = row[3]
+        black = 1 if ethnicity in black_categories else 0
+        white = 1 if ethnicity in white_categories else 0
+        cur3.execute(f"SELECT gender, age FROM patients_gender_and_age_mimic_iii WHERE subject_id = \'\"{subject_id}\"\'")
+        gender_and_age_row = cur3.fetchone()
+        print(subject_id)
+        print(gender_and_age_row)
+        if gender_and_age_row is not None:
+            male = 1 if gender_and_age_row[0] == "M" else 0
+            age = float(gender_and_age_row[1])
+            phecodes_diagnosed_with = []
+            label_dischtime = -1
+            for phecode_and_dischtime in subject_id_to_phecodes_dischtimes[current_subject_id]:
+                phecodes_diagnosed_with.append(phecode_and_dischtime[0])
+                print(phecode_and_dischtime[0])
+                if phecode_and_dischtime[0] == f'"{phecode_to_be_predicted_with_decimal}"':
+                    label_dischtime = phecode_and_dischtime[1]
+            label = 1 if f'"{phecode_to_be_predicted_with_decimal}"' in phecodes_diagnosed_with else 0
+            phecodes_dischtimes_features = []
+            for phecode_and_dischtime in subject_id_to_phecodes_dischtimes[current_subject_id]:
+                phecode, dischtime = phecode_and_dischtime
+                should_be_included = True if dischtime != 0 and (label == 0 or datetime.strptime(dischtime, '%Y-%m-%d %H:%M:%S') + relativedelta(years=1) < datetime.strptime(label_dischtime, '%Y-%m-%d %H:%M:%S')) else False
+                if should_be_included:
+                    phecodes_dischtimes_features.append([dischtime, phecode])
+                print(datetime.strptime(dischtime, '%Y-%m-%d %H:%M:%S'))
+                print(datetime.strptime(dischtime, '%Y-%m-%d %H:%M:%S') + relativedelta(years=1))
+                if label_dischtime != -1:
+                    print(datetime.strptime(label_dischtime, '%Y-%m-%d %H:%M:%S'))
+                print(should_be_included)
+            data_to_be_appended = [label, marital_status, black, white, male, age, json.dumps(sorted(phecodes_dischtimes_features))]
+            batch_data.append(data_to_be_appended)
+            print(f"NOT YET: INSERT INTO X_and_y_{phecode_to_be_predicted_without_decimal}_llm_mimic_iii (`{phecode_to_be_predicted_without_decimal}`, marital_status, black, white, male, age, other_phecodes_dischtimes) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                    data_to_be_appended)
+            if len(batch_data) > 500:
+                cur4.executemany(f"INSERT INTO X_and_y_{phecode_to_be_predicted_without_decimal}_llm_mimic_iii (`{phecode_to_be_predicted_without_decimal}`, marital_status, black, white, male, age, other_phecodes_dischtimes) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                batch_data)
+                batch_data = []
+                con4.commit()
+    cur4.executemany(f"INSERT INTO X_and_y_{phecode_to_be_predicted_without_decimal}_llm_mimic_iii (`{phecode_to_be_predicted_without_decimal}`, marital_status, black, white, male, age, other_phecodes_dischtimes) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                    batch_data)
+    batch_data = []
+    con.commit()
+    con2.commit()
+    con3.commit()
+    con4.commit()
+    con.close()
+    con2.close()
+    con3.close()
+    con4.close()
+    print(f"Ending create_X_and_y_predicting_llm_labels")
+
+def predicting_with_llm_after_phenotyping_with_phecodes_helper(information, condition):
+    prompt = f'''You are predicting whether or not a patient will get {condition}. If they never will get {condition}, 
+    respond with 0. If they will get {condition}, respond with 1. You must respond with 0 or 1, 
+    and you must respond with nothing else. Here is medical information about the patient:'''
+    prompt_reminder = f'''Here is a reminder of the task: You are predicting whether or not a patient will get {condition}. 
+    If they never will get {condition}, respond with 0. If they will get {condition}, respond with 1. 
+    You must respond with 0 or 1, and you must respond with nothing else.'''
+    prompt = [prompt] + information + [prompt_reminder]
+    prompt = "\n".join(prompt)
+    print(prompt)
+    return llama3(prompt)
+
+def predicting_with_llm_after_phenotyping_with_phecodes(phecode_to_be_predicted_without_decimal):
+    con = sqlite3.connect(f"X_and_y_{phecode_to_be_predicted_without_decimal}_llm_mimic_iii.db")
+    cur = con.cursor()
+    cur.execute(f"SELECT * FROM X_and_y_{phecode_to_be_predicted_without_decimal}_llm_mimic_iii;")
+    print(len(cur.fetchall()))
+    X = []
+    y = []
+    y_and_X = []
+    cur.execute(f"SELECT * FROM X_and_y_{phecode_to_be_predicted_without_decimal}_llm_mimic_iii;")
+    for row in cur.fetchall()[:1000]:
+        X.append(row[1:])
+        y.append(row[0])
+        y_and_X.append(row)
+    con.commit()
+    con.close()
+    y_pred = []
+    condition = ""
+    if phecode_to_be_predicted_without_decimal == "157":
+        condition = "pancreatic cancer"
+    elif phecode_to_be_predicted_without_decimal == "2502":
+        condition = "type 2 diabetes"
+    else:
+        condition = "sepsis"
+    for row in y_and_X:
+        print(len(y_pred))
+        _, marital_status, black, white, male, age, other_phecodes_dischtimes = row
+        other_phecodes_dischtimes = json.loads(other_phecodes_dischtimes)
+        information = []
+        if marital_status == 1:
+            information.append("The patient is married.")
+        else:
+            information.append("The patient is not married.")
+        if black == 1:
+            information.append("The patient is Black.")
+        else:
+            information.append("The patient is not Black.")
+        if white == 1:
+            information.append("The patient is white.")
+        else:
+            information.append("The patient is not white.")
+        if male == 1:
+            information.append("The patient is male.")
+        else:
+            information.append("The patient is not male.")
+        information.append(f"The patient is {age} years old.")
+        for other_phecode_dischtime in other_phecodes_dischtimes:
+            dischtime, phecode = other_phecode_dischtime
+            information.append(f"The patient was given the PheCode of {phecode} at {dischtime}.")
+        current_prediction = 1 if predicting_with_llm_after_phenotyping_with_phecodes_helper(information, condition) == "1" else 0
+        print(current_prediction)
+        y_pred.append(current_prediction)
+    print(f"Confusion Matrix: {metrics.confusion_matrix(y, y_pred, labels=[0, 1])}")
+    print(f"Accuracy: {metrics.accuracy_score(y, y_pred)}")
+    print(f"Precision: {metrics.precision_score(y, y_pred)}")
+    print(f"Recall: {metrics.recall_score(y, y_pred)}")
+    print(f"Accuracy: {metrics.accuracy_score(y, y_pred)}")
+    print(f"F1-Score: {metrics.f1_score(y, y_pred)}")
 
 # csv_to_sql_hosp_drgcodes()
 # patients_icd_codes()
@@ -840,4 +1035,12 @@ def create_phenotyping_llm_labels():
 # random_forest("X_and_y_pancreatic_cancer_mimic_iii")
 
 # create_medical_notes_file()
-create_phenotyping_llm_labels()
+# create_phenotyping_llm_labels()
+
+# create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes("157", "157")
+# create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes("2502", "250.2")
+# create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes("9942", "994.2")
+
+predicting_with_llm_after_phenotyping_with_phecodes("157")
+# predicting_with_llm_after_phenotyping_with_phecodes("2502")
+# predicting_with_llm_after_phenotyping_with_phecodes("9942")
