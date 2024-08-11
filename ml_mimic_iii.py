@@ -179,45 +179,6 @@ def csv_to_sql_hosp_admissions():
     con.commit()
     con.close()
 
-def csv_to_sql_hosp_drgcodes():
-    con = sqlite3.connect("drgcodes_mimic_iii.db")
-    cur = con.cursor()
-    cur.execute("DROP TABLE IF EXISTS drgcodes_mimic_iii;")
-    cur.execute("CREATE TABLE drgcodes_mimic_iii (subject_id, hadm_id, drg_type, drg_code, description, drg_severity, drg_mortality);")
-    with open('mimic-iii-clinical-database-1.4/DRGCODES.csv', 'r') as file:
-        total_lines = len(file.readlines())
-    with open('mimic-iii-clinical-database-1.4/DRGCODES.csv', 'r') as file:
-        current_line_num = 1
-        while current_line_num <= total_lines:
-            current_line = file.readline().split(',')
-            if current_line_num > 1:
-                print(current_line_num)
-                print(current_line)
-                subject_id = current_line[1]
-                hadm_id = current_line[2]
-                drg_type = current_line[3]
-                drg_code = current_line[4]
-                description = ""
-                i = 5
-                while i < len(current_line) - 3:
-                    description += current_line[i]
-                    description += ","
-                    i += 1
-                description += current_line[len(current_line) - 3]
-                drg_severity = current_line[len(current_line) - 2]
-                drg_mortality = current_line[len(current_line) - 1]
-                drg_mortality = drg_mortality.split('\n')[0]
-                cur.execute("INSERT INTO drgcodes_mimic_iii (subject_id, hadm_id, drg_type, drg_code, description, drg_severity, drg_mortality) VALUES (?, ?, ?, ?, ?, ?, ?);",
-                            (subject_id, hadm_id, drg_type, drg_code, description, drg_severity, drg_mortality))
-                con.commit()
-            current_line_num += 1
-    cur = con.cursor()
-    cur.execute("SELECT * FROM drgcodes_mimic_iii;")
-    for row in cur.fetchall():
-        print(row)
-    con.commit()
-    con.close()
-
 def patients_gender_and_age():
     con = sqlite3.connect("patients_gender_and_age_mimic_iii.db")
     cur = con.cursor()
@@ -578,7 +539,7 @@ def logistic_regression(phecode_to_be_predicted_without_decimal):
     print(f"y length: {len(y)}")
     print(f"First few y: {y[0:10]}")
     test_size = 0.2
-    if phecode_to_be_predicted_without_decimal == "pancreatic_cancer_llm":
+    if phecode_to_be_predicted_without_decimal == "pancreatic_cancer_llm" or phecode_to_be_predicted_without_decimal == "type_2_diabetes_llm" or phecode_to_be_predicted_without_decimal == "sepsis_llm":
         test_size = 0.5
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=1)
     print(f"First few X_train: {X_train[0:10]}")
@@ -635,7 +596,7 @@ def random_forest(phecode_to_be_predicted_without_decimal):
     print(f"y length: {len(y)}")
     print(f"First few y: {y[0:20]}")
     test_size = 0.2
-    if phecode_to_be_predicted_without_decimal == "pancreatic_cancer_llm":
+    if phecode_to_be_predicted_without_decimal == "pancreatic_cancer_llm" or phecode_to_be_predicted_without_decimal == "type_2_diabetes_llm" or phecode_to_be_predicted_without_decimal == "sepsis_llm":
         test_size = 0.5
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=1)
     rf = RandomForestClassifier(class_weight='balanced')
@@ -1102,21 +1063,138 @@ def create_X_and_y_predicting_after_phenotyping_with_llm(condition_string):
     con4.close()
     con5.close()
 
-def predicting_with_llm_after_phenotyping_with_llm(condition_string):
-    con = sqlite3.connect(f"X_and_y_{condition_string}_llm_mimic_iii.db")
+def create_X_and_y_llm_predicting_after_phenotyping_with_llm(condition_string):
+    with open('phecode_definitions1.2.csv', 'r') as file:
+        amt_of_phecodes = len(file.readlines())
+    phecodes = set()
+    with open('phecode_definitions1.2.csv', 'r') as file:
+        current_line_num = 1
+        while current_line_num <= amt_of_phecodes:
+            current_line = file.readline().split(',')
+            if current_line_num > 1:
+                phecode = current_line[0].split('\"')[1]
+                phecodes.add(phecode)
+                print(phecode)
+            current_line_num += 1
+    icd9_to_phecodes = icd_to_phecodes_data_structures()
+    hadm_id_to_dischtimes = hadm_id_to_dischtimes_data_structure()
+    con2 = sqlite3.connect("patients_icd9_codes_mimic_iii.db")
+    cur2 = con2.cursor()
+    cur2.execute(f"SELECT * FROM patients_icd9_codes_mimic_iii;")
+    subject_id_to_phecodes_dischtimes = {}
+    for row in cur2.fetchall():
+        print(f"cur2 row: {row}")
+        current_subject_id = row[0]
+        hadm_id = row[1]
+        if row[2] != '':
+            icd9_code = row[2].split('\"')[1]
+            print(icd9_code)
+            if icd9_code in icd9_to_phecodes:
+                current_phecodes = icd9_to_phecodes[icd9_code]
+                for phecode in current_phecodes:
+                    dischtime = hadm_id_to_dischtimes[hadm_id]
+                    if phecode in phecodes:
+                        if current_subject_id not in subject_id_to_phecodes_dischtimes.keys():
+                            subject_id_to_phecodes_dischtimes[current_subject_id] = set()
+                        phecode_is_in_tuple_already = False
+                        for current in subject_id_to_phecodes_dischtimes[current_subject_id]:
+                            if phecode == current[0]:
+                                phecode_is_in_tuple_already = True
+                        if not phecode_is_in_tuple_already:
+                            subject_id_to_phecodes_dischtimes[current_subject_id].add(tuple([phecode, dischtime]))
+                            print("ICD9:")
+                            print(tuple([phecode, dischtime]))
+    con = sqlite3.connect("phenotyping_llm_features_mimic_iii.db")
     cur = con.cursor()
-    cur.execute(f"SELECT * FROM X_and_y_{condition_string}_llm_mimic_iii;")
-    print(len(cur.fetchall()))
-    X = []
-    y = []
-    y_and_X = []
-    cur.execute(f"SELECT * FROM X_and_y_{condition_string}_llm_mimic_iii;")
-    for row in cur.fetchall()[:1000]:
-        X.append(row[1:])
-        y.append(row[0])
-        y_and_X.append(row)
+    cur.execute("SELECT * FROM phenotyping_llm_features_mimic_iii;")
+    con2 = sqlite3.connect(f"X_and_y_llm_{condition_string}_llm_mimic_iii.db")
+    cur2 = con2.cursor()
+    cur2.execute(f"DROP TABLE IF EXISTS X_and_y_llm_{condition_string}_llm_mimic_iii;")
+    phecodes_string, question_string = patients_phecodes_dischtimes_sql_hosp(phecodes_string_only=True)
+    # everything after `{condition_string}` is X
+    # `{phecode_to_be_predicted}` is y
+    database_columns = f"{condition_string}, marital_status, black, white, male, age, phecodes_dischtimes_features"
+    cur2.execute(f"CREATE TABLE X_and_y_llm_{condition_string}_llm_mimic_iii ({database_columns});")
+    black_categories = ['"BLACK/AFRICAN AMERICAN"', '"BLACK/AFRICAN"', '"BLACK/CAPE VERDEAN"', '"BLACK/HAITIAN"']
+    white_categories = ['"WHITE - BRAZILIAN"', '"WHITE - EASTERN EUROPEAN"', '"WHITE - OTHER EUROPEAN"', '"WHITE - RUSSIAN"', '"WHITE"']
+    con3 = sqlite3.connect("admitted_patients_mimic_iii.db")
+    cur3 = con3.cursor()
+    con4 = sqlite3.connect("patients_phecodes_dischtimes_mimic_iii.db")
+    cur4 = con4.cursor()
+    con5 = sqlite3.connect("patients_gender_and_age_mimic_iii.db")
+    cur5 = con5.cursor()
+    batch_data = []
+    for row in cur.fetchall():
+        subject_id = row[0]
+        if condition_string == "pancreatic_cancer":
+            condition_to_be_predicted_diagnosed_time = row[1]
+        elif condition_string == "type_2_diabetes":
+            condition_to_be_predicted_diagnosed_time = row[2]
+        else:
+            condition_to_be_predicted_diagnosed_time = row[3]
+        cur3.execute(f"SELECT * FROM admitted_patients_mimic_iii WHERE subject_id = '{subject_id}';")
+        row = cur3.fetchone()
+        con3.commit()
+        subject_id = row[0]
+        marital_status = 1 if row[2] == '"MARRIED"' else 0
+        ethnicity = row[3]
+        black = 1 if ethnicity in black_categories else 0
+        white = 1 if ethnicity in white_categories else 0
+        cur5.execute(f"SELECT gender, age FROM patients_gender_and_age_mimic_iii WHERE subject_id = \'\"{subject_id}\"\'")
+        gender_and_age_row = cur5.fetchone()
+        print(subject_id)
+        print(gender_and_age_row)
+        if gender_and_age_row is not None and subject_id in subject_id_to_phecodes_dischtimes.keys():
+            phecodes_diagnosed_with = []
+            for phecode_and_dischtime in subject_id_to_phecodes_dischtimes[subject_id]:
+                phecodes_diagnosed_with.append(phecode_and_dischtime[0])
+            male = 1 if gender_and_age_row[0] == "M" else 0
+            age = float(gender_and_age_row[1])
+            cur4.execute(f"SELECT {phecodes_string} FROM patients_phecodes_dischtimes_mimic_iii WHERE subject_id = '{subject_id}';")
+            diagnosed_times = cur4.fetchone()
+            print(diagnosed_times)
+            condition_to_be_predicted_diagnosed = 1 if condition_to_be_predicted_diagnosed_time not in ["0", 0] else 0
+            print(condition_to_be_predicted_diagnosed_time)
+            print(condition_to_be_predicted_diagnosed)
+            phecodes_dischtimes_features = []
+            for phecode_and_dischtime in subject_id_to_phecodes_dischtimes[subject_id]:
+                phecode, dischtime = phecode_and_dischtime
+                should_be_included = True if dischtime != 0 and (condition_to_be_predicted_diagnosed == 0 or datetime.strptime(dischtime, '%Y-%m-%d %H:%M:%S') + relativedelta(years=1) < datetime.strptime(condition_to_be_predicted_diagnosed_time, '%Y-%m-%d %H:%M:%S')) else False
+                if should_be_included:
+                    phecodes_dischtimes_features.append([dischtime, phecode])
+                print(datetime.strptime(dischtime, '%Y-%m-%d %H:%M:%S'))
+                print(datetime.strptime(dischtime, '%Y-%m-%d %H:%M:%S') + relativedelta(years=1))
+            data_to_be_appended = [condition_to_be_predicted_diagnosed, marital_status, black, white, male, age, json.dumps(sorted(phecodes_dischtimes_features))]
+            batch_data.append(data_to_be_appended)
+            insertion_string = ""
+            for i in range(0, len(data_to_be_appended) - 1, 1):
+                insertion_string += str(data_to_be_appended[i])
+                insertion_string += ", "
+            insertion_string += str(data_to_be_appended[len(data_to_be_appended) - 1])
+            print(f"NOT YET: INSERT INTO X_and_y_llm_{condition_string}_llm_mimic_iii ({database_columns}) VALUES ({insertion_string});")
+            if len(batch_data) > 100:
+                cur2.executemany(f"INSERT INTO X_and_y_llm_{condition_string}_llm_mimic_iii ({database_columns}) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                batch_data)
+                batch_data = []
+    cur2.executemany(f"INSERT INTO X_and_y_llm_{condition_string}_llm_mimic_iii ({database_columns}) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                    batch_data)
     con.commit()
+    con2.commit()
+    con3.commit()
+    con4.commit()
+    con5.commit()
     con.close()
+    con2.close()
+    con3.close()
+    con4.close()
+    con5.close()
+
+def predicting_with_llm_after_phenotyping_with_llm(condition_string):
+    con = sqlite3.connect(f"X_and_y_llm_{condition_string}_llm_mimic_iii.db")
+    cur = con.cursor()
+    cur.execute(f"SELECT * FROM X_and_y_llm_{condition_string}_llm_mimic_iii;")
+    print(len(cur.fetchall()))
+    y = []
     y_pred = []
     condition = ""
     if condition_string == "pancreatic_cancer":
@@ -1125,10 +1203,15 @@ def predicting_with_llm_after_phenotyping_with_llm(condition_string):
         condition = "type 2 diabetes"
     else:
         condition = "sepsis"
-    for row in y_and_X:
-        print(len(y_pred))
-        _, marital_status, black, white, male, age, other_phecodes_dischtimes = row
-        other_phecodes_dischtimes = json.loads(other_phecodes_dischtimes)
+    cur.execute(f"SELECT * FROM X_and_y_llm_{condition_string}_llm_mimic_iii;")
+    row_num = 1
+    for row in cur.fetchall():
+        print(row_num)
+        row_num += 1
+        label, marital_status, black, white, male, age, phecodes_dischtimes_features = row
+        y.append(label)
+        print(f"The label is {label}")
+        phecodes_dischtimes_features = json.loads(phecodes_dischtimes_features)
         information = []
         if marital_status == 1:
             information.append("The patient is married.")
@@ -1147,8 +1230,8 @@ def predicting_with_llm_after_phenotyping_with_llm(condition_string):
         else:
             information.append("The patient is not male.")
         information.append(f"The patient is {age} years old.")
-        for other_phecode_dischtime in other_phecodes_dischtimes:
-            dischtime, phecode = other_phecode_dischtime
+        for phecode_dischtime in phecodes_dischtimes_features:
+            dischtime, phecode = phecode_dischtime
             information.append(f"The patient was given the PheCode of {phecode} at {dischtime}.")
         current_prediction = 1 if predicting_with_llm_after_phenotyping_with_phecodes_helper(information, condition) == "1" else 0
         print(current_prediction)
@@ -1160,50 +1243,53 @@ def predicting_with_llm_after_phenotyping_with_llm(condition_string):
     print(f"Accuracy: {metrics.accuracy_score(y, y_pred)}")
     print(f"F1-Score: {metrics.f1_score(y, y_pred)}")
 
-# csv_to_sql_hosp_drgcodes()
-# patients_icd_codes()
-# icd_to_phecodes()
-# csv_to_sql_hosp_admissions()
-# admitted_patients()
-# patients_gender_and_age()
-# patients_phecodes_dischtimes_sql_hosp()
-# calculate_demographics()
+patients_icd_codes()
+icd_to_phecodes()
+csv_to_sql_hosp_admissions()
+admitted_patients()
+patients_gender_and_age()
+patients_phecodes_dischtimes_sql_hosp()
+calculate_demographics()
 
-# create_X_and_y("157")
-# create_X_and_y("250.2")
-# create_X_and_y("994.2")
+create_X_and_y("157")
+create_X_and_y("250.2")
+create_X_and_y("994.2")
 
-# logistic_regression("157")
-# logistic_regression("2502")
-# logistic_regression("9942")
+logistic_regression("157")
+logistic_regression("2502")
+logistic_regression("9942")
 
-# random_forest("157")
-# random_forest("2502")
-# random_forest("9942")
+random_forest("157")
+random_forest("2502")
+random_forest("9942")
 
-# create_medical_notes_file()
-# create_phenotyping_llm_labels()
+create_medical_notes_file()
+create_phenotyping_llm_labels()
 
-# create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes("157", "157")
-# create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes("2502", "250.2")
-# create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes("9942", "994.2")
+create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes("157", "157")
+create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes("2502", "250.2")
+create_X_and_y_predicting_llm_labels_after_phenotyping_with_phecodes("9942", "994.2")
 
-# predicting_with_llm_after_phenotyping_with_phecodes("157")
-# predicting_with_llm_after_phenotyping_with_phecodes("2502")
-# predicting_with_llm_after_phenotyping_with_phecodes("9942")
+predicting_with_llm_after_phenotyping_with_phecodes("157")
+predicting_with_llm_after_phenotyping_with_phecodes("2502")
+predicting_with_llm_after_phenotyping_with_phecodes("9942")
 
-# create_X_and_y_predicting_after_phenotyping_with_llm("pancreatic_cancer")
-# create_X_and_y_predicting_after_phenotyping_with_llm("type_2_diabetes")
-# create_X_and_y_predicting_after_phenotyping_with_llm("sepsis")
+create_X_and_y_predicting_after_phenotyping_with_llm("pancreatic_cancer")
+create_X_and_y_predicting_after_phenotyping_with_llm("type_2_diabetes")
+create_X_and_y_predicting_after_phenotyping_with_llm("sepsis")
 
 logistic_regression("pancreatic_cancer_llm")
-# logistic_regression("type_2_diabetes_llm")
-# logistic_regression("sepsis_llm")
+logistic_regression("type_2_diabetes_llm")
+logistic_regression("sepsis_llm")
 
-# random_forest("pancreatic_cancer_llm")
-# random_forest("type_2_diabetes_llm")
-# random_forest("sepsis_llm")
+random_forest("pancreatic_cancer_llm")
+random_forest("type_2_diabetes_llm")
+random_forest("sepsis_llm")
 
-# predicting_with_llm_after_phenotyping_with_llm("pancreatic_cancer_llm")
-# predicting_with_llm_after_phenotyping_with_llm("type_2_diabetes_llm")
-# predicting_with_llm_after_phenotyping_with_llm("sepsis_llm")
+create_X_and_y_llm_predicting_after_phenotyping_with_llm("pancreatic_cancer")
+create_X_and_y_llm_predicting_after_phenotyping_with_llm("type_2_diabetes")
+create_X_and_y_llm_predicting_after_phenotyping_with_llm("sepsis")
+
+predicting_with_llm_after_phenotyping_with_llm("pancreatic_cancer")
+predicting_with_llm_after_phenotyping_with_llm("type_2_diabetes")
+predicting_with_llm_after_phenotyping_with_llm("sepsis")
